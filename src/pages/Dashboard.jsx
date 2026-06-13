@@ -358,29 +358,6 @@ function Dashboard() {
     margin: '0 auto'
   };
 
-  const heroSubtitle = {
-    fontSize: '1.2rem',
-    opacity: 0.9,
-    marginTop: '0.5rem',
-    maxWidth: '600px',
-    margin: '0.5rem auto 0 auto',
-  };
-
-  const heroMoneyContainer = {
-    marginTop: '2rem',
-  };
-
-  const heroMoneyValue = {
-    fontSize: '3.5rem',
-    fontWeight: 'bold',
-  };
-  
-  const heroMoneyLabel = {
-      fontSize: '1.1rem',
-      opacity: 0.9,
-      marginTop: '0.25rem'
-  };
-
   const statsContainerStyle = {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
@@ -492,6 +469,24 @@ function Dashboard() {
     background: 'rgba(255, 255, 255, 0.9)',
     boxSizing: 'border-box',
     color: '#333'
+  };
+
+  const welcomeCardStyle = {
+    background: 'linear-gradient(135deg, #6d28d9, #2563eb)',
+    color: 'white',
+    borderRadius: '20px',
+    padding: '30px',
+    boxShadow: '0 10px 20px rgba(0,0,0,0.15)',
+    marginBottom: '20px',
+    textAlign: 'center'
+  };
+
+  const announcementCardStyle = {
+    background: '#e0f2fe',
+    borderRadius: '20px',
+    padding: '20px',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+    marginBottom: '20px'
   };
   
   const nextRewardInfo = getNextRewardInfo();
@@ -675,31 +670,27 @@ function Dashboard() {
         
         {logoutError && <p style={{color: 'red', textAlign: 'center'}}>{logoutError}</p>}
 
-        <section className="p-8 md:py-12 md:px-8 rounded-2xl bg-gradient-to-r from-[#4a00e0] to-[#8e2de2] text-white text-center mb-12 shadow-lg">
-            <h1 className="text-3xl md:text-5xl font-bold break-word">Welcome Back, {userData ? userData.username : 'User'}!</h1>
-            <p style={heroSubtitle}>Complete tasks, earn rewards, and grow with GrowthQuest.</p>
-            <div style={heroMoneyContainer}>
-                <div style={heroMoneyValue}>₹{calculateTotalMoney(userData)}</div>
-                <div style={heroMoneyLabel}>Total Money Earned</div>
+        <div style={welcomeCardStyle}>
+            <h1 style={{fontSize: '2.5rem', fontWeight: 'bold', breakWord: 'break-word'}}>
+                Welcome Back, {userData ? userData.username : 'User'}!
+            </h1>
+            <p style={{fontSize: '1.1rem', opacity: 0.9, marginTop: '0.5rem', maxWidth: '600px', margin: '0.5rem auto 0 auto'}}>
+                Complete tasks, earn rewards, and grow with GrowthQuest.
+            </p>
+            <div style={{marginTop: '1.5rem'}}>
+                <div style={{fontSize: '3rem', fontWeight: 'bold'}}>₹{calculateTotalMoney(userData)}</div>
+                <div style={{fontSize: '1rem', opacity: 0.9}}>Total Money Earned</div>
             </div>
-        </section>
+        </div>
 
         {announcement && (
-            <section className="relative p-8 mb-12 bg-gradient-to-r from-indigo-100 via-purple-100 to-pink-100 border-l-8 border-purple-600 rounded-2xl shadow-lg">
-                <div className="flex items-center">
-                    <span className="text-3xl mr-4">📢</span>
-                    <h2 className="text-lg font-semibold text-purple-700">Announcement</h2>
-                </div>
-                <h3 className="text-2xl font-bold text-purple-900 mt-4">
-                    {announcement.title}
-                </h3>
-                <p className="mt-2 text-gray-800 leading-relaxed">
-                    {announcement.message}
-                </p>
-                <p className="text-xs text-gray-600 mt-6 text-right">
+            <div style={announcementCardStyle}>
+                <h2 style={{fontSize: '1.5rem', fontWeight: '600', color: '#0c4a6e', marginBottom: '0.5rem'}}>{announcement.title}</h2>
+                <p style={{color: '#1e293b', lineHeight: '1.6'}}>{announcement.message}</p>
+                <p style={{fontSize: '0.8rem', color: '#64748b', textAlign: 'right', marginTop: '1rem'}}>
                     Posted on: {announcement.createdAt?.toDate().toLocaleDateString()}
                 </p>
-            </section>
+            </div>
         )}
 
         <section>
