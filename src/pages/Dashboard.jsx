@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { signOut } from 'firebase/auth';
+import { signOut, sendPasswordResetEmail } from 'firebase/auth';
 
 function Dashboard() {
   const [userData, setUserData] = useState(null);
@@ -11,7 +11,12 @@ function Dashboard() {
   const [logoutError, setLogoutError] = useState('');
   const [isDrawerOpen, setDrawerOpen] = useState(false);
   const [isAboutModalOpen, setAboutModalOpen] = useState(false);
-  const [isTermsModalOpen, setTermsModalOpen] = useState(false);  const navigate = useNavigate();
+  const [isTermsModalOpen, setTermsModalOpen] = useState(false);
+  const [isChangePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState('');
+  const [changePasswordError, setChangePasswordError] = useState('');
+  const [isProcessingPasswordChange, setIsProcessingPasswordChange] = useState(false);
+  const navigate = useNavigate();
   const user = auth.currentUser;
   const [announcement, setAnnouncement] = useState(null);
 
@@ -75,6 +80,34 @@ function Dashboard() {
     if (!data) return '0.00';
     const money = ((data.redeemedPoints || 0) / 100) * 10;
     return money.toFixed(2);
+  };
+
+  const handleChangePassword = async () => {
+    setChangePasswordSuccess('');
+    setChangePasswordError('');
+    setIsProcessingPasswordChange(true);
+
+    if (!user) {
+      setChangePasswordError("No user is currently signed in.");
+      setIsProcessingPasswordChange(false);
+      return;
+    }
+
+    try {
+      await sendPasswordResetEmail(auth, user.email);
+      setChangePasswordSuccess("A password reset link has been sent to your registered email address. Please check your inbox and spam folder.");
+    } catch (error) {
+      console.error("Error sending password reset email:", error);
+      setChangePasswordError("Failed to send reset link. Please try again later.");
+    } finally {
+      setIsProcessingPasswordChange(false);
+    }
+  };
+
+  const closeChangePasswordModal = () => {
+    setChangePasswordModalOpen(false);
+    setChangePasswordSuccess('');
+    setChangePasswordError('');
   };
 
   const pageStyle = {
@@ -252,7 +285,7 @@ function Dashboard() {
       height: '100%',
       backgroundColor: 'rgba(0,0,0,0.5)',
       zIndex: 2000,
-      display: isAboutModalOpen || isTermsModalOpen ? 'flex' : 'none',
+      display: isAboutModalOpen || isTermsModalOpen || isChangePasswordModalOpen ? 'flex' : 'none',
       justifyContent: 'center',
       alignItems: 'center',
   };
@@ -309,12 +342,13 @@ function Dashboard() {
 
   return (
     <div style={pageStyle}>
-        <div style={backdropStyle} onClick={() => { setAboutModalOpen(false); setTermsModalOpen(false); }}></div>
+        <div style={backdropStyle} onClick={() => setDrawerOpen(false)}></div>
         <div style={drawerStyle}>
             <div style={drawerHeader}>GrowthQuest</div>
             <div style={menuItemsContainer}>
                 <a style={menuItemStyle} onClick={() => { setAboutModalOpen(true); setDrawerOpen(false); }}>About Our Admin</a>
                 <a style={menuItemStyle} onClick={() => { setTermsModalOpen(true); setDrawerOpen(false); }}>Terms & Conditions</a>
+                <a style={menuItemStyle} onClick={() => { setChangePasswordModalOpen(true); setDrawerOpen(false); }}>Change Password</a>
             </div>
             <button style={logoutButtonStyle} onClick={handleLogout}>Logout</button>
         </div>
@@ -352,6 +386,39 @@ function Dashboard() {
                         <li style={modalParagraphStyle}><b>Platform Updates:</b> Rules and features may change over time.</li>
                         <li style={modalParagraphStyle}><b>Final Decision:</b> Administrative decisions regarding disputes and violations are final.</li>
                     </ul>
+                </div>
+            </div>
+        )}
+        
+        {isChangePasswordModalOpen && (
+            <div style={modalBackdropStyle} onClick={closeChangePasswordModal}>
+                <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
+                    <button style={modalCloseButtonStyle} onClick={closeChangePasswordModal}>&times;</button>
+                    <h2 style={modalTitleStyle}>Change Password</h2>
+                    
+                    {changePasswordSuccess ? (
+                        <p style={{color: 'green', textAlign: 'center'}}>{changePasswordSuccess}</p>
+                    ) : changePasswordError ? (
+                        <p style={{color: 'red', textAlign: 'center'}}>{changePasswordError}</p>
+                    ) : (
+                        <p style={modalParagraphStyle}>A password reset link will be sent to your registered email address. You can use it to create a new password.</p>
+                    )}
+
+                    {!changePasswordSuccess && (
+                        <div style={{display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '2rem'}}>
+                            <button 
+                                style={{...actionButtonStyle, background: '#888', width: 'auto'}} 
+                                onClick={closeChangePasswordModal}>
+                                Cancel
+                            </button>
+                            <button 
+                                style={{...actionButtonStyle, background: 'linear-gradient(to right, #4a00e0, #8e2de2)', width: 'auto'}} 
+                                onClick={handleChangePassword}
+                                disabled={isProcessingPasswordChange}>
+                                {isProcessingPasswordChange ? 'Sending...' : 'Send Reset Link'}
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
         )}
