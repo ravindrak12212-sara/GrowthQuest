@@ -6,6 +6,7 @@ import { collection, query, where, getDocs, doc, runTransaction, increment, getC
 
 function AdminDashboard() {
   const [requests, setRequests] = useState([]);
+  const [users, setUsers] = useState([]);
   const [transactionCount, setTransactionCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -20,7 +21,11 @@ function AdminDashboard() {
       setError(null);
       setLoading(true);
 
-      // Fetch pending redemption requests
+      const usersQuery = query(collection(db, "users"));
+      const usersSnapshot = await getDocs(usersQuery);
+      const usersData = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUsers(usersData);
+
       const q = query(collection(db, "redemptionRequests"), where("status", "==", "pending"));
       const querySnapshot = await getDocs(q);
       const requestsData = querySnapshot.docs.map(doc => ({
@@ -29,7 +34,6 @@ function AdminDashboard() {
       }));
       setRequests(requestsData);
 
-      // Fetch total transaction count
       const transactionsCollection = collection(db, 'transactions');
       const snapshot = await getCountFromServer(transactionsCollection);
       setTransactionCount(snapshot.data().count);
@@ -269,6 +273,24 @@ function AdminDashboard() {
     minHeight: '100px'
   };
 
+  const tableStyle = {
+    width: '100%',
+    borderCollapse: 'collapse',
+    marginTop: '1.5rem',
+  };
+
+  const thStyle = {
+    border: '1px solid #ddd',
+    padding: '8px',
+    textAlign: 'left',
+    backgroundColor: '#f2f2f2',
+  };
+
+  const tdStyle = {
+    border: '1px solid #ddd',
+    padding: '8px',
+  };
+
   return (
     <div style={pageStyle}>
       <nav style={navStyle}>
@@ -285,7 +307,7 @@ function AdminDashboard() {
         <section>
           <div style={statsContainerStyle}>
             <div style={statCardStyle}>
-              <div style={cardValueStyle}>0</div>
+              <div style={cardValueStyle}>{loading ? '...' : users.length}</div>
               <div style={cardTitleStyle}>Total Users</div>
             </div>
             <div style={{...statCardStyle, background: 'linear-gradient(to right, #ff7e5f, #feb47b)'}}>
@@ -321,6 +343,34 @@ function AdminDashboard() {
             >
               Publish Announcement
             </button>
+          </div>
+        </section>
+
+        <section>
+          <h2 style={sectionTitleStyle}>User Information</h2>
+          <div style={requestsContainerStyle}>
+            {loading ? <p>Loading users...</p> : 
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Username</th>
+                    <th style={thStyle}>Email</th>
+                    <th style={thStyle}>Points Earned</th>
+                    <th style={thStyle}>UPI ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map(user => (
+                    <tr key={user.id}>
+                      <td style={tdStyle}>{user.username}</td>
+                      <td style={tdStyle}>{user.email}</td>
+                      <td style={tdStyle}>{user.pointsEarned}</td>
+                      <td style={tdStyle}>{user.upiId || 'N/A'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            }
           </div>
         </section>
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { signOut, sendPasswordResetEmail } from 'firebase/auth';
 
 function Dashboard() {
@@ -16,6 +16,10 @@ function Dashboard() {
   const [changePasswordSuccess, setChangePasswordSuccess] = useState('');
   const [changePasswordError, setChangePasswordError] = useState('');
   const [isProcessingPasswordChange, setIsProcessingPasswordChange] = useState(false);
+  const [isUpiModalOpen, setUpiModalOpen] = useState(false);
+  const [upiId, setUpiId] = useState('');
+  const [upiModalMessage, setUpiModalMessage] = useState('');
+  const [isSavingUpi, setIsSavingUpi] = useState(false);
   const navigate = useNavigate();
   const user = auth.currentUser;
   const [announcement, setAnnouncement] = useState(null);
@@ -30,7 +34,9 @@ function Dashboard() {
 
     const unsubscribe = onSnapshot(userDocRef, (doc) => {
         if (doc.exists()) {
-            setUserData(doc.data());
+            const data = doc.data();
+            setUserData(data);
+            setUpiId(data.upiId || '');
         } else {
             setError("Could not find user data.");
         }
@@ -102,6 +108,33 @@ function Dashboard() {
     } finally {
       setIsProcessingPasswordChange(false);
     }
+  };
+
+  const handleSaveUpi = async () => {
+    if (!upiId) {
+      setUpiModalMessage("Please enter a UPI ID.");
+      return;
+    }
+    setIsSavingUpi(true);
+    setUpiModalMessage('');
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
+      await updateDoc(userDocRef, {
+        redeemMethod: "UPI",
+        upiId: upiId,
+      });
+      setUpiModalMessage("UPI ID saved successfully!");
+    } catch (err) {
+      console.error("Error saving UPI ID:", err);
+      setUpiModalMessage("Failed to save UPI ID. Please try again.");
+    } finally {
+      setIsSavingUpi(false);
+    }
+  };
+
+  const openUpiModal = () => {
+    setUpiModalMessage('');
+    setUpiModalOpen(true);
   };
 
   const closeChangePasswordModal = () => {
@@ -285,7 +318,7 @@ function Dashboard() {
       height: '100%',
       backgroundColor: 'rgba(0,0,0,0.5)',
       zIndex: 2000,
-      display: isAboutModalOpen || isTermsModalOpen || isChangePasswordModalOpen ? 'flex' : 'none',
+      display: isAboutModalOpen || isTermsModalOpen || isChangePasswordModalOpen || isUpiModalOpen ? 'flex' : 'none',
       justifyContent: 'center',
       alignItems: 'center',
   };
@@ -332,6 +365,17 @@ function Dashboard() {
     paddingLeft: '20px',
   };
 
+  const inputStyle = {
+    width: '100%',
+    padding: '12px',
+    marginBottom: '20px',
+    borderRadius: '5px',
+    border: '1px solid #ddd',
+    background: 'rgba(255, 255, 255, 0.9)',
+    boxSizing: 'border-box',
+    color: '#333'
+  };
+
   if (loading) {
     return <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh'}}>Loading...</div>;
   }
@@ -349,6 +393,7 @@ function Dashboard() {
                 <a style={menuItemStyle} onClick={() => { setAboutModalOpen(true); setDrawerOpen(false); }}>About Our Admin</a>
                 <a style={menuItemStyle} onClick={() => { setTermsModalOpen(true); setDrawerOpen(false); }}>Terms & Conditions</a>
                 <a style={menuItemStyle} onClick={() => { setChangePasswordModalOpen(true); setDrawerOpen(false); }}>Change Password</a>
+                <a style={menuItemStyle} onClick={() => { openUpiModal(); setDrawerOpen(false); }}>Redeem Method</a>
             </div>
             <button style={logoutButtonStyle} onClick={handleLogout}>Logout</button>
         </div>
@@ -419,6 +464,36 @@ function Dashboard() {
                             </button>
                         </div>
                     )}
+                </div>
+            </div>
+        )}
+
+        {isUpiModalOpen && (
+            <div style={modalBackdropStyle} onClick={() => setUpiModalOpen(false)}>
+                <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
+                    <button style={modalCloseButtonStyle} onClick={() => setUpiModalOpen(false)}>&times;</button>
+                    <h2 style={modalTitleStyle}>Redeem Method</h2>
+                    <input
+                      style={inputStyle}
+                      type="text"
+                      placeholder="Enter your UPI ID"
+                      value={upiId}
+                      onChange={(e) => setUpiId(e.target.value)}
+                    />
+                    {upiModalMessage && <p style={{color: isSavingUpi ? 'blue' : 'green', textAlign: 'center'}}>{upiModalMessage}</p>}
+                    <div style={{display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '2rem'}}>
+                        <button 
+                            style={{...actionButtonStyle, background: '#888', width: 'auto'}} 
+                            onClick={() => setUpiModalOpen(false)}>
+                            Cancel
+                        </button>
+                        <button 
+                            style={{...actionButtonStyle, background: 'linear-gradient(to right, #4a00e0, #8e2de2)', width: 'auto'}} 
+                            onClick={handleSaveUpi}
+                            disabled={isSavingUpi}>
+                            {isSavingUpi ? 'Saving...' : 'Save'}
+                        </button>
+                    </div>
                 </div>
             </div>
         )}

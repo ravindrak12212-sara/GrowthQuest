@@ -44,7 +44,13 @@ function Login() {
         }
 
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+
+        if (user.email.toLowerCase() === 'ravindrak12212@gmail.com') {
+            navigate('/admin');
+            return; 
+        }
       }
       navigate('/dashboard');
     } catch (error) {
