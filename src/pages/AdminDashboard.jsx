@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
 import { signOut } from 'firebase/auth';
-import { collection, query, where, getDocs, doc, runTransaction, increment, getCountFromServer, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, runTransaction, increment, getCountFromServer, setDoc, serverTimestamp, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 function AdminDashboard() {
   const [requests, setRequests] = useState([]);
@@ -15,6 +16,9 @@ function AdminDashboard() {
   const navigate = useNavigate();
   const [announcementTitle, setAnnouncementTitle] = useState('');
   const [announcementMessage, setAnnouncementMessage] = useState('');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [currentAnnouncement, setCurrentAnnouncement] = useState(null);
+  const [announcementLoading, setAnnouncementLoading] = useState(true);
 
   const fetchDashboardData = async () => {
     try {
@@ -48,6 +52,22 @@ function AdminDashboard() {
 
   useEffect(() => {
     fetchDashboardData();
+
+    const announcementRef = doc(db, 'announcements', 'current');
+    const unsubscribe = onSnapshot(announcementRef, (docSnap) => {
+        if (docSnap.exists()) {
+            setCurrentAnnouncement({ id: docSnap.id, ...docSnap.data() });
+        } else {
+            setCurrentAnnouncement(null);
+        }
+        setAnnouncementLoading(false);
+    }, (error) => {
+        console.error("Error fetching current announcement:", error);
+        setError("Failed to fetch current announcement.");
+        setAnnouncementLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const handleRequest = async (requestId, userId, requestedPoints, action) => {
@@ -132,6 +152,21 @@ function AdminDashboard() {
     } catch (err) {
       console.error("Error publishing announcement:", err);
       setError("Failed to publish announcement. Please try again.");
+    }
+  };
+
+  const handleDeleteAnnouncement = async () => {
+    setError(null);
+    setMessage('');
+    try {
+        const announcementRef = doc(db, 'announcements', 'current');
+        await deleteDoc(announcementRef);
+        setMessage("Current announcement has been deleted successfully!");
+    } catch (err) {
+        console.error("Error deleting announcement:", err);
+        setError("Failed to delete announcement. Please try again.");
+    } finally {
+        setShowDeleteModal(false);
     }
   };
 
@@ -290,6 +325,29 @@ function AdminDashboard() {
     border: '1px solid #ddd',
     padding: '8px',
   };
+  
+  const modalOverlayStyle = {
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 2000,
+  };
+
+  const modalContentStyle = {
+      background: 'white',
+      padding: '2rem',
+      borderRadius: '12px',
+      boxShadow: '0 5px 15px rgba(0,0,0,0.3)',
+      maxWidth: '500px',
+      width: '90%',
+      textAlign: 'center',
+  };
 
   return (
     <div style={pageStyle}>
@@ -345,6 +403,44 @@ function AdminDashboard() {
             </button>
           </div>
         </section>
+
+        <section>
+            <h2 style={sectionTitleStyle}>Current Announcement</h2>
+            <div style={announcementFormStyle}>
+                {announcementLoading ? (
+                    <p>Loading announcement...</p>
+                ) : currentAnnouncement ? (
+                    <div>
+                        <h3 style={{fontSize: '1.2rem', fontWeight: 'bold'}}>{currentAnnouncement.title}</h3>
+                        <p style={{margin: '1rem 0'}}>{currentAnnouncement.message}</p>
+                        <p style={{fontSize: '0.8rem', color: '#666'}}>
+                            Published on: {currentAnnouncement.createdAt?.toDate().toLocaleString()}
+                        </p>
+                        <button
+                            style={{...buttonStyle, background: '#dc3545', width: '100%', marginTop: '1rem'}}
+                            onClick={() => setShowDeleteModal(true)}
+                        >
+                            Delete Announcement
+                        </button>
+                    </div>
+                ) : (
+                    <p>No active announcement.</p>
+                )}
+            </div>
+        </section>
+
+        {showDeleteModal && (
+            <div style={modalOverlayStyle}>
+                <div style={modalContentStyle}>
+                    <h3 style={{fontSize: '1.5rem', marginBottom: '1rem'}}>Confirm Deletion</h3>
+                    <p>Are you sure you want to delete the current announcement? This action cannot be undone.</p>
+                    <div style={{marginTop: '2rem'}}>
+                        <button style={{...buttonStyle, background: '#dc3545', marginRight: '1rem'}} onClick={handleDeleteAnnouncement}>Confirm Delete</button>
+                        <button style={{...buttonStyle, background: '#6c757d'}} onClick={() => setShowDeleteModal(false)}>Cancel</button>
+                    </div>
+                </div>
+            </div>
+        )}
 
         <section>
           <h2 style={sectionTitleStyle}>User Information</h2>
