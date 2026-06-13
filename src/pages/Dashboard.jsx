@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 
 function Dashboard() {
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [logoutError, setLogoutError] = useState('');
   const [isDrawerOpen, setDrawerOpen] = useState(false);
-  const [isModalOpen, setModalOpen] = useState(false);
-  const navigate = useNavigate();
+  const [isAboutModalOpen, setAboutModalOpen] = useState(false);
+  const [isTermsModalOpen, setTermsModalOpen] = useState(false);  const navigate = useNavigate();
   const user = auth.currentUser;
+  const [announcement, setAnnouncement] = useState(null);
 
   useEffect(() => {
     if (!user) {
@@ -34,16 +36,30 @@ function Dashboard() {
         setLoading(false);
     });
 
-    return () => unsubscribe();
+    const announcementRef = doc(db, 'announcements', 'current');
+    const unsubscribeAnnouncements = onSnapshot(announcementRef, (doc) => {
+      if (doc.exists() && doc.data().active) {
+        setAnnouncement(doc.data());
+      } else {
+        setAnnouncement(null);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeAnnouncements();
+    }
 
   }, [user, navigate]);
 
   const handleLogout = async () => {
+    setLogoutError('');
     try {
       await signOut(auth);
       navigate('/');
     } catch (error) {
       console.error("Error signing out: ", error);
+      setLogoutError("Failed to log out. Please try again.");
     }
   };
   
@@ -80,6 +96,17 @@ function Dashboard() {
   const hamburgerStyle = {
       fontSize: '1.5rem',
       cursor: 'pointer',
+  };
+
+  const headerLogoutButtonStyle = {
+    padding: '0.5rem 1rem',
+    borderRadius: '8px',
+    border: 'none',
+    background: '#ff6b6b',
+    color: 'white',
+    fontSize: '0.9rem',
+    cursor: 'pointer',
+    transition: 'background 0.3s',
   };
 
   const logoutButtonStyle = {
@@ -145,22 +172,6 @@ function Dashboard() {
     padding: '2rem',
     maxWidth: '1200px',
     margin: '0 auto'
-  };
-
-  const heroBanner = {
-    padding: '3rem 2rem',
-    borderRadius: '16px',
-    background: 'linear-gradient(to right, #4a00e0, #8e2de2)',
-    color: 'white',
-    textAlign: 'center',
-    marginBottom: '3rem',
-    boxShadow: '0 8px 20px rgba(0,0,0,0.15)',
-  };
-
-  const heroTitle = {
-    fontSize: '2.8rem',
-    fontWeight: 'bold',
-    margin: 0,
   };
 
   const heroSubtitle = {
@@ -241,7 +252,7 @@ function Dashboard() {
       height: '100%',
       backgroundColor: 'rgba(0,0,0,0.5)',
       zIndex: 2000,
-      display: isModalOpen ? 'flex' : 'none',
+      display: isAboutModalOpen || isTermsModalOpen ? 'flex' : 'none',
       justifyContent: 'center',
       alignItems: 'center',
   };
@@ -283,6 +294,11 @@ function Dashboard() {
       color: '#888'
   };
 
+  const termsListStyle = {
+    listStyleType: 'disc',
+    paddingLeft: '20px',
+  };
+
   if (loading) {
     return <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh'}}>Loading...</div>;
   }
@@ -293,19 +309,20 @@ function Dashboard() {
 
   return (
     <div style={pageStyle}>
-        <div style={backdropStyle} onClick={() => setDrawerOpen(false)}></div>
+        <div style={backdropStyle} onClick={() => { setAboutModalOpen(false); setTermsModalOpen(false); }}></div>
         <div style={drawerStyle}>
             <div style={drawerHeader}>GrowthQuest</div>
             <div style={menuItemsContainer}>
-                 <a style={menuItemStyle} onClick={() => { setModalOpen(true); setDrawerOpen(false); }}>About Our Admin</a>
+                <a style={menuItemStyle} onClick={() => { setAboutModalOpen(true); setDrawerOpen(false); }}>About Our Admin</a>
+                <a style={menuItemStyle} onClick={() => { setTermsModalOpen(true); setDrawerOpen(false); }}>Terms & Conditions</a>
             </div>
             <button style={logoutButtonStyle} onClick={handleLogout}>Logout</button>
         </div>
 
-        {isModalOpen && (
-            <div style={modalBackdropStyle} onClick={() => setModalOpen(false)}>
+        {isAboutModalOpen && (
+            <div style={modalBackdropStyle} onClick={() => setAboutModalOpen(false)}>
                 <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
-                    <button style={modalCloseButtonStyle} onClick={() => setModalOpen(false)}>&times;</button>
+                    <button style={modalCloseButtonStyle} onClick={() => setAboutModalOpen(false)}>&times;</button>
                     <h2 style={modalTitleStyle}>About Our Admin</h2>
                     <p style={modalParagraphStyle}>Welcome to GrowthQuest! ❤️</p>
                     <p style={modalParagraphStyle}>GrowthQuest started with a simple idea — to create an opportunity where students and young learners can make meaningful use of their free time while earning a little pocket money through engaging activities like games and surveys. Bringing this platform to life required a great deal of hard work, patience, and dedication.</p>
@@ -320,22 +337,61 @@ function Dashboard() {
             </div>
         )}
 
+        {isTermsModalOpen && (
+            <div style={modalBackdropStyle} onClick={() => setTermsModalOpen(false)}>
+                <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
+                    <button style={modalCloseButtonStyle} onClick={() => setTermsModalOpen(false)}>&times;</button>
+                    <h2 style={modalTitleStyle}>Terms & Conditions</h2>
+                    <ul style={termsListStyle}>
+                        <li style={modalParagraphStyle}><b>Fair Play:</b> Users must participate honestly and avoid exploiting the platform.</li>
+                        <li style={modalParagraphStyle}><b>Authentic Responses:</b> Surveys and quizzes should be answered genuinely.</li>
+                        <li style={modalParagraphStyle}><b>Daily Streak Responsibility:</b> Consistent participation is required to maintain streaks.</li>
+                        <li style={modalParagraphStyle}><b>Legitimate Usage:</b> Only one account per individual is allowed.</li>
+                        <li style={modalParagraphStyle}><b>Reward Eligibility:</b> Rewards are subject to verification and may be withheld in cases of misuse.</li>
+                        <li style={modalParagraphStyle}><b>Respectful Participation:</b> Users should maintain respectful conduct.</li>
+                        <li style={modalParagraphStyle}><b>Platform Updates:</b> Rules and features may change over time.</li>
+                        <li style={modalParagraphStyle}><b>Final Decision:</b> Administrative decisions regarding disputes and violations are final.</li>
+                    </ul>
+                </div>
+            </div>
+        )}
+
       <header style={headerStyle}>
           <div style={hamburgerStyle} onClick={() => setDrawerOpen(true)}>&#9776;</div>
           <h2 style={{margin: 0, fontSize: '1.5rem', fontWeight: 'bold', color: '#4a00e0'}}>Dashboard</h2>
-          <div></div>
+          <button style={headerLogoutButtonStyle} onClick={handleLogout}>Logout</button>
       </header>
 
       <main style={mainContentStyle}>
         
-        <section style={heroBanner}>
-            <h1 style={heroTitle}>Welcome Back, {userData ? userData.username : 'User'}!</h1>
+        {logoutError && <p style={{color: 'red', textAlign: 'center'}}>{logoutError}</p>}
+
+        <section className="p-8 md:py-12 md:px-8 rounded-2xl bg-gradient-to-r from-[#4a00e0] to-[#8e2de2] text-white text-center mb-12 shadow-lg">
+            <h1 className="text-3xl md:text-5xl font-bold break-word">Welcome Back, {userData ? userData.username : 'User'}!</h1>
             <p style={heroSubtitle}>Complete tasks, earn rewards, and grow with GrowthQuest.</p>
             <div style={heroMoneyContainer}>
                 <div style={heroMoneyValue}>₹{calculateTotalMoney(userData)}</div>
                 <div style={heroMoneyLabel}>Total Money Earned</div>
             </div>
         </section>
+
+        {announcement && (
+            <section className="relative p-8 mb-12 bg-gradient-to-r from-indigo-100 via-purple-100 to-pink-100 border-l-8 border-purple-600 rounded-2xl shadow-lg">
+                <div className="flex items-center">
+                    <span className="text-3xl mr-4">📢</span>
+                    <h2 className="text-lg font-semibold text-purple-700">Announcement</h2>
+                </div>
+                <h3 className="text-2xl font-bold text-purple-900 mt-4">
+                    {announcement.title}
+                </h3>
+                <p className="mt-2 text-gray-800 leading-relaxed">
+                    {announcement.message}
+                </p>
+                <p className="text-xs text-gray-600 mt-6 text-right">
+                    Posted on: {announcement.createdAt?.toDate().toLocaleDateString()}
+                </p>
+            </section>
+        )}
 
         <section>
           <div style={statsContainerStyle}>

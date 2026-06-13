@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
 import { signOut } from 'firebase/auth';
-import { collection, query, where, getDocs, doc, runTransaction, increment, getCountFromServer } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, runTransaction, increment, getCountFromServer, setDoc, serverTimestamp } from 'firebase/firestore';
 
 function AdminDashboard() {
   const [requests, setRequests] = useState([]);
@@ -12,6 +12,8 @@ function AdminDashboard() {
   const [processingId, setProcessingId] = useState(null);
   const [message, setMessage] = useState('');
   const navigate = useNavigate();
+  const [announcementTitle, setAnnouncementTitle] = useState('');
+  const [announcementMessage, setAnnouncementMessage] = useState('');
 
   const fetchDashboardData = async () => {
     try {
@@ -102,6 +104,30 @@ function AdminDashboard() {
     } catch (error) {
       console.error("Error signing out: ", error);
       setError("Failed to log out. Please try again.");
+    }
+  };
+
+  const handlePublishAnnouncement = async () => {
+    if (!announcementTitle || !announcementMessage) {
+      setError("Please fill in both the title and message for the announcement.");
+      return;
+    }
+    setError(null);
+    setMessage('');
+    try {
+      const announcementRef = doc(db, 'announcements', 'current');
+      await setDoc(announcementRef, {
+        title: announcementTitle,
+        message: announcementMessage,
+        active: true,
+        createdAt: serverTimestamp(),
+      });
+      setMessage("Announcement published successfully!");
+      setAnnouncementTitle('');
+      setAnnouncementMessage('');
+    } catch (err) {
+      console.error("Error publishing announcement:", err);
+      setError("Failed to publish announcement. Please try again.");
     }
   };
 
@@ -217,6 +243,32 @@ function AdminDashboard() {
       margin: '0 5px'
   }
 
+  const announcementFormStyle = {
+    backgroundColor: 'white',
+    borderRadius: '12px',
+    padding: '2rem',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+  };
+
+  const inputStyle = {
+    width: '100%',
+    padding: '0.8rem',
+    borderRadius: '8px',
+    border: '1px solid #ccc',
+    marginBottom: '1rem',
+    fontSize: '1rem'
+  };
+
+  const textareaStyle = {
+    width: '100%',
+    padding: '0.8rem',
+    borderRadius: '8px',
+    border: '1px solid #ccc',
+    marginBottom: '1rem',
+    fontSize: '1rem',
+    minHeight: '100px'
+  };
+
   return (
     <div style={pageStyle}>
       <nav style={navStyle}>
@@ -244,6 +296,31 @@ function AdminDashboard() {
               <div style={cardValueStyle}>{loading ? '...' : transactionCount}</div>
               <div style={cardTitleStyle}>Total Transactions</div>
             </div>
+          </div>
+        </section>
+
+        <section>
+          <h2 style={sectionTitleStyle}>Announcement Management</h2>
+          <div style={announcementFormStyle}>
+            <input
+              type="text"
+              style={inputStyle}
+              placeholder="Announcement Title"
+              value={announcementTitle}
+              onChange={(e) => setAnnouncementTitle(e.target.value)}
+            />
+            <textarea
+              style={textareaStyle}
+              placeholder="Announcement Message"
+              value={announcementMessage}
+              onChange={(e) => setAnnouncementMessage(e.target.value)}
+            />
+            <button
+              style={{...buttonStyle, background: '#4a00e0', width: '100%'}}
+              onClick={handlePublishAnnouncement}
+            >
+              Publish Announcement
+            </button>
           </div>
         </section>
 
