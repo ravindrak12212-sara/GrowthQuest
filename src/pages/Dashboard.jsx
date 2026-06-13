@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
 import { doc, onSnapshot, updateDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { signOut, sendPasswordResetEmail } from 'firebase/auth';
+import ActivePolls from '../components/user/ActivePolls';
 
 function Dashboard() {
   const [userData, setUserData] = useState(null);
@@ -282,28 +283,14 @@ function Dashboard() {
       cursor: 'pointer',
   };
 
-  const headerLogoutButtonStyle = {
-    padding: '0.5rem 1rem',
-    borderRadius: '8px',
-    border: 'none',
-    background: '#ff6b6b',
-    color: 'white',
-    fontSize: '0.9rem',
-    cursor: 'pointer',
-    transition: 'background 0.3s',
-  };
-
-  const logoutButtonStyle = {
-    padding: '0.5rem 1rem',
-    borderRadius: '8px',
-    border: 'none',
-    background: '#ff6b6b',
-    color: 'white',
-    fontSize: '0.9rem',
-    cursor: 'pointer',
-    transition: 'background 0.3s',
-    width: '100%',
-    textAlign: 'left'
+  const headerTitleStyle = {
+      margin: 0,
+      fontSize: '1.5rem',
+      fontWeight: 'bold',
+      color: '#4a00e0',
+      position: 'absolute',
+      left: '50%',
+      transform: 'translateX(-50%)'
   };
   
   const drawerStyle = {
@@ -509,8 +496,8 @@ function Dashboard() {
                 <a style={menuItemStyle} onClick={() => { setTermsModalOpen(true); setDrawerOpen(false); }}>Terms & Conditions</a>
                 <a style={menuItemStyle} onClick={() => { setChangePasswordModalOpen(true); setDrawerOpen(false); }}>Change Password</a>
                 <a style={menuItemStyle} onClick={() => { openUpiModal(); setDrawerOpen(false); }}>Redeem Method</a>
+                 <a style={menuItemStyle} onClick={handleLogout}>Logout</a>
             </div>
-            <button style={logoutButtonStyle} onClick={handleLogout}>Logout</button>
         </div>
 
         {isAboutModalOpen && (
@@ -662,8 +649,8 @@ function Dashboard() {
 
       <header style={headerStyle}>
           <div style={hamburgerStyle} onClick={() => setDrawerOpen(true)}>&#9776;</div>
-          <h2 style={{margin: 0, fontSize: '1.5rem', fontWeight: 'bold', color: '#4a00e0'}}>Dashboard</h2>
-          <button style={headerLogoutButtonStyle} onClick={handleLogout}>Logout</button>
+          <h2 style={headerTitleStyle}>Dashboard</h2>
+          <div style={{width: '40px'}}></div> {/* This div is for spacing, to help center the title */}
       </header>
 
       <main style={mainContentStyle}>
@@ -692,6 +679,10 @@ function Dashboard() {
                 </p>
             </div>
         )}
+
+        <section style={{ marginBottom: '2rem' }}>
+          <ActivePolls />
+        </section>
 
         <section>
           <div style={statsContainerStyle}>
