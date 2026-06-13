@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { signOut, sendPasswordResetEmail } from 'firebase/auth';
 
 function Dashboard() {
@@ -13,6 +13,8 @@ function Dashboard() {
   const [isAboutModalOpen, setAboutModalOpen] = useState(false);
   const [isTermsModalOpen, setTermsModalOpen] = useState(false);
   const [isChangePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
+  const [isBonusModalOpen, setBonusModalOpen] = useState(false);
+  const [streakBonusInfo, setStreakBonusInfo] = useState(null);
   const [changePasswordSuccess, setChangePasswordSuccess] = useState('');
   const [changePasswordError, setChangePasswordError] = useState('');
   const [isProcessingPasswordChange, setIsProcessingPasswordChange] = useState(false);
@@ -23,6 +25,8 @@ function Dashboard() {
   const navigate = useNavigate();
   const user = auth.currentUser;
   const [announcement, setAnnouncement] = useState(null);
+
+  const MILESTONES = { 5: 50, 10: 100, 15: 150, 20: 200, 25: 250, 30: 300 };
 
   useEffect(() => {
     if (!user) {
@@ -63,6 +67,91 @@ function Dashboard() {
 
   }, [user, navigate]);
 
+  useEffect(() => {
+    if (user && userData && !userData.isAdmin) {
+        const grantDailyBonus = async () => {
+            const userDocRef = doc(db, 'users', user.uid);
+            try {
+                let dailyBonusAwarded = false;
+
+                const streakReward = await runTransaction(db, async (transaction) => {
+                    const userDoc = await transaction.get(userDocRef);
+                    if (!userDoc.exists()) {
+                        throw "Document does not exist!";
+                    }
+
+                    const data = userDoc.data();
+                    const today = new Date();
+                    const lastBonusDate = data.lastLoginBonusDate?.toDate();
+
+                    if (lastBonusDate && lastBonusDate.toLocaleDateString() === today.toLocaleDateString()) {
+                        return null; // Exit if bonus is already claimed
+                    }
+
+                    dailyBonusAwarded = true;
+                    let updates = {};
+                    let awardedStreakBonus = null;
+
+                    // 1. Grant Daily Login Bonus
+                    updates.pointsEarned = (data.pointsEarned || 0) + 25;
+                    updates.lastLoginBonusDate = serverTimestamp();
+
+                    // 2. Calculate Login Streak
+                    const yesterday = new Date();
+                    yesterday.setDate(today.getDate() - 1);
+                    
+                    let currentStreak = data.currentStreak || 0;
+                    let lastStreakRewardMilestone = data.lastStreakRewardMilestone || 0;
+
+                    const isStreakContinuing = lastBonusDate && lastBonusDate.toLocaleDateString() === yesterday.toLocaleDateString();
+
+                    if (isStreakContinuing) {
+                        if (currentStreak === 30) {
+                            currentStreak = 1;
+                            lastStreakRewardMilestone = 0;
+                        } else {
+                            currentStreak++;
+                        }
+                    } else {
+                        currentStreak = 1;
+                        lastStreakRewardMilestone = 0;
+                    }
+                    
+                    updates.currentStreak = currentStreak;
+
+                    // 3. Update Longest Streak
+                    updates.longestStreak = Math.max(data.longestStreak || 0, currentStreak);
+
+                    // 4. Check for Milestone Bonuses
+                    const bonusForCurrentStreak = MILESTONES[currentStreak];
+                    if (bonusForCurrentStreak && currentStreak > lastStreakRewardMilestone) {
+                        updates.pointsEarned += bonusForCurrentStreak;
+                        lastStreakRewardMilestone = currentStreak;
+                        awardedStreakBonus = { milestone: currentStreak, bonus: bonusForCurrentStreak };
+                    }
+                    updates.lastStreakRewardMilestone = lastStreakRewardMilestone;
+
+                    transaction.update(userDocRef, updates);
+                    return awardedStreakBonus;
+                });
+
+                if (dailyBonusAwarded) {
+                    setBonusModalOpen(true);
+                }
+
+                if (streakReward) {
+                    setStreakBonusInfo(streakReward);
+                }
+
+            } catch (error) {
+                console.error("Daily bonus/streak transaction failed: ", error);
+            }
+        };
+
+        grantDailyBonus();
+    }
+  }, [user, userData, navigate]);
+
   const handleLogout = async () => {
     setLogoutError('');
     try {
@@ -87,6 +176,35 @@ function Dashboard() {
     const money = ((data.redeemedPoints || 0) / 100) * 10;
     return money.toFixed(2);
   };
+
+    const getNextRewardInfo = () => {
+        if (!userData) return null;
+
+        const currentStreak = userData.currentStreak || 0;
+        const lastMilestone = userData.lastStreakRewardMilestone || 0;
+
+        if (lastMilestone === 30) {
+            return { isCycleComplete: true };
+        }
+
+        const nextTarget = Object.keys(MILESTONES).map(Number).find(m => m > lastMilestone);
+
+        if (nextTarget) {
+            const bonus = MILESTONES[nextTarget];
+            const previousMilestone = lastMilestone;
+            const progress = Math.min(100, ((currentStreak - previousMilestone) / (nextTarget - previousMilestone)) * 100);
+
+            return {
+                bonus,
+                target: nextTarget,
+                current: currentStreak,
+                progress: progress > 0 ? progress : 0,
+                isCycleComplete: false
+            };
+        }
+
+        return { isAllDone: true };
+    };
 
   const handleChangePassword = async () => {
     setChangePasswordSuccess('');
@@ -318,7 +436,7 @@ function Dashboard() {
       height: '100%',
       backgroundColor: 'rgba(0,0,0,0.5)',
       zIndex: 2000,
-      display: isAboutModalOpen || isTermsModalOpen || isChangePasswordModalOpen || isUpiModalOpen ? 'flex' : 'none',
+      display: isAboutModalOpen || isTermsModalOpen || isChangePasswordModalOpen || isUpiModalOpen || isBonusModalOpen || streakBonusInfo ? 'flex' : 'none',
       justifyContent: 'center',
       alignItems: 'center',
   };
@@ -375,6 +493,8 @@ function Dashboard() {
     boxSizing: 'border-box',
     color: '#333'
   };
+  
+  const nextRewardInfo = getNextRewardInfo();
 
   if (loading) {
     return <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh'}}>Loading...</div>;
@@ -498,6 +618,53 @@ function Dashboard() {
             </div>
         )}
 
+        {isBonusModalOpen && (
+            <div style={modalBackdropStyle} onClick={() => setBonusModalOpen(false)}>
+                <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
+                    <button style={modalCloseButtonStyle} onClick={() => setBonusModalOpen(false)}>&times;</button>
+                    <h2 style={modalTitleStyle}>Daily Login Reward</h2>
+                     <p style={{...modalParagraphStyle, textAlign: 'center', fontSize: '1.2rem', color: '#333'}}>
+                        You earned <span style={{fontWeight: 'bold', color: '#4a00e0'}}>25 points</span> for logging in today!
+                    </p>
+                    <p style={{...modalParagraphStyle, textAlign: 'center', opacity: 0.8, marginTop: '0.5rem'}}>
+                        Come back tomorrow for another bonus.
+                    </p>
+                    <div style={{display: 'flex', justifyContent: 'center', marginTop: '2rem'}}>
+                        <button 
+                            style={{...actionButtonStyle, background: 'linear-gradient(to right, #4a00e0, #8e2de2)', width: 'auto', padding: '0.8rem 2.5rem'}} 
+                            onClick={() => setBonusModalOpen(false)}>
+                            Awesome!
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {streakBonusInfo && (
+            <div style={modalBackdropStyle} onClick={() => setStreakBonusInfo(null)}>
+                <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
+                    <button style={modalCloseButtonStyle} onClick={() => setStreakBonusInfo(null)}>&times;</button>
+                    <h2 style={modalTitleStyle}>🎉 Streak Bonus! 🎉</h2>
+                    <p style={{...modalParagraphStyle, textAlign: 'center', fontSize: '1.4rem', color: '#333'}}>
+                        You reached a <span style={{fontWeight: 'bold', color: '#4a00e0'}}>{streakBonusInfo.milestone}-Day Streak</span>!
+                    </p>
+                    <p style={{...modalParagraphStyle, textAlign: 'center', fontSize: '1.2rem', color: '#333'}}>
+                        You've earned an extra <span style={{fontWeight: 'bold', color: '#ff7e5f'}}>{streakBonusInfo.bonus} points!</span>
+                    </p>
+                    <p style={{...modalParagraphStyle, textAlign: 'center', opacity: 0.8, marginTop: '0.5rem'}}>
+                        Keep up the great work!
+                    </p>
+                    <div style={{display: 'flex', justifyContent: 'center', marginTop: '2rem'}}>
+                        <button 
+                            style={{...actionButtonStyle, background: 'linear-gradient(to right, #ff7e5f, #feb47b)', width: 'auto', padding: '0.8rem 2.5rem'}} 
+                            onClick={() => setStreakBonusInfo(null)}>
+                            Awesome!
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
       <header style={headerStyle}>
           <div style={hamburgerStyle} onClick={() => setDrawerOpen(true)}>&#9776;</div>
           <h2 style={{margin: 0, fontSize: '1.5rem', fontWeight: 'bold', color: '#4a00e0'}}>Dashboard</h2>
@@ -556,6 +723,56 @@ function Dashboard() {
               <div style={cardTitleStyle}>Processing Points</div>
             </div>
           </div>
+        </section>
+
+        <section style={{marginTop: '3rem'}}>
+            <h2 style={{ fontSize: '2rem', fontWeight: 'bold', textAlign: 'center', marginBottom: '2rem', color: '#4a00e0'}}>Your Streak</h2>
+            <div style={statsContainerStyle}>
+                <div style={{...statCardStyle, background: 'linear-gradient(to right, #4CAF50, #81C784)'}}>
+                    <div style={cardValueStyle}>{userData ? userData.currentStreak || 0 : 0}</div>
+                    <div style={cardTitleStyle}>Current Streak</div>
+                </div>
+                <div style={{...statCardStyle, background: 'linear-gradient(to right, #fbc531, #f9ca24)'}}>
+                    <div style={cardValueStyle}>{userData ? userData.longestStreak || 0 : 0}</div>
+                    <div style={cardTitleStyle}>Longest Streak</div>
+                </div>
+                <div style={{...statCardStyle, background: 'linear-gradient(to right, #e84393, #d63031)', display: 'flex', flexDirection: 'column', justifyContent: 'center'}}>
+                    {nextRewardInfo ? (
+                        nextRewardInfo.isCycleComplete ? (
+                             <div style={{textAlign: 'center'}}>
+                                <div style={{...cardValueStyle, fontSize: '2rem'}}>🎉</div>
+                                <div style={cardTitleStyle}>Cycle Complete!</div>
+                                <div style={{fontSize: '0.9rem', opacity: 0.8, marginTop: '1rem'}}>New rewards start on your next login.</div>
+                            </div>
+                        ) : nextRewardInfo.isAllDone ? (
+                             <div style={{textAlign: 'center'}}>
+                                <div style={{...cardValueStyle, fontSize: '2rem'}}>🏆</div>
+                                <div style={cardTitleStyle}>All Done!</div>
+                             </div>
+                        ) : (
+                            <>
+                                <div>
+                                    <div style={{fontSize: '2.5rem', fontWeight: 'bold'}}>+{nextRewardInfo.bonus} Points</div>
+                                    <div style={{fontSize: '1.1rem', opacity: 0.9}}>for {nextRewardInfo.target} Day Streak</div>
+                                </div>
+                                <div style={{marginTop: '1.5rem'}}>
+                                    <div style={{height: '10px', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '5px', overflow: 'hidden'}}>
+                                        <div style={{width: `${nextRewardInfo.progress}%`, height: '100%', background: 'linear-gradient(to right, #fbc531, #f9ca24)', borderRadius: '5px', transition: 'width 0.5s ease-in-out'}}></div>
+                                    </div>
+                                    <div style={{fontSize: '0.9rem', opacity: 0.8, textAlign: 'right', marginTop: '0.5rem'}}>
+                                        {nextRewardInfo.current} / {nextRewardInfo.target} Days
+                                    </div>
+                                </div>
+                            </>
+                        )
+                    ) : (
+                        <>
+                            <div style={cardValueStyle}>...</div>
+                            <div style={cardTitleStyle}>Next Reward</div>
+                        </>
+                    )}
+                </div>
+            </div>
         </section>
         
         <section style={{marginTop: '3rem'}}>
