@@ -68,10 +68,42 @@ function Dashboard() {
       }
     });
 
-    return () => {
-      unsubscribe();
-      unsubscribeAnnouncements();
-    }
+    const writingTasksQuery = query(
+        collection(db, 'writingTasks'),
+        where('active', '==', true),
+        where('archived', '==', false)
+      );
+      
+      const unsubscribeWritingTasks = onSnapshot(writingTasksQuery, (snapshot) => {
+        setWritingTasks(
+          snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+          }))
+        );
+      });
+      
+      const writingResponsesQuery = query(
+        collection(db, 'writingResponses'),
+        where('userId', '==', user.uid)
+      );
+      
+      const unsubscribeWritingResponses = onSnapshot(writingResponsesQuery, (snapshot) => {
+        setUserWritingResponses(
+          snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+          }))
+        );
+      });
+
+
+        return () => {
+            unsubscribe();
+            unsubscribeAnnouncements();
+            unsubscribeWritingTasks();
+            unsubscribeWritingResponses();
+          }
 
   }, [user, navigate]);
 
