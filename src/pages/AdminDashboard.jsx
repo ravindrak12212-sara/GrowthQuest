@@ -195,6 +195,7 @@ function AdminDashboard() {
       await addDoc(collection(db, 'writingTasks'), {
         ...newWritingTask,
         active: false, // Default to inactive
+        archived: false,
         createdAt: serverTimestamp(),
       });
       setNewWritingTask({ title: '', question: '', rewardPoints: 50, minimumWords: 100 });
