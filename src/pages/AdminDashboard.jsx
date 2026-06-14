@@ -4,6 +4,7 @@ import { auth, db } from '../firebase/firebase';
 import { signOut } from 'firebase/auth';
 import { collection, query, where, onSnapshot, doc, runTransaction, increment, serverTimestamp, setDoc, deleteDoc, orderBy, limit, addDoc, updateDoc } from 'firebase/firestore';
 import PollManagement from '../components/admin/PollManagement';
+import WritingManagement from '../components/admin/WritingManagement';
 
 function AdminDashboard() {
   // --- STATE MANAGEMENT ---
@@ -20,6 +21,7 @@ function AdminDashboard() {
   const [usersLoading, setUsersLoading] = useState(true);
   const [pollsLoading, setPollsLoading] = useState(true);
   const [requestsLoading, setRequestsLoading] = useState(true);
+  const [writingTasksLoading, setWritingTasksLoading] = useState(true);
   const [announcementLoading, setAnnouncementLoading] = useState(true);
 
   // TABS
@@ -44,6 +46,10 @@ function AdminDashboard() {
   const [pollResponses, setPollResponses] = useState([]);
   const [responsesLoading, setResponsesLoading] = useState(false);
 
+  // WRITING MANAGEMENT STATE
+  const [writingTasks, setWritingTasks] = useState([]);
+  const [newWritingTask, setNewWritingTask] = useState({ title: '', question: '', rewardPoints: 50, minimumWords: 100 });
+
 
   // --- FIRESTORE LISTENERS ---
   useEffect(() => {
@@ -61,6 +67,8 @@ function AdminDashboard() {
     unsubscribes.push(onSnapshot(approvedQuery, (snapshot) => { setApprovedRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }));
     const rejectedQuery = query(collection(db, "redemptionRequests"), where("status", "==", "rejected"), orderBy("rejectedAt", "desc"), limit(20));
     unsubscribes.push(onSnapshot(rejectedQuery, (snapshot) => { setRejectedRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }));
+    const writingTasksQuery = query(collection(db, "writingTasks"), orderBy("createdAt", "desc"));
+    unsubscribes.push(onSnapshot(writingTasksQuery, (snapshot) => { setWritingTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setWritingTasksLoading(false); }, (err) => { console.error("Writing tasks listener error:", err); setWritingTasksLoading(false); }));
 
     return () => unsubscribes.forEach(unsub => unsub());
   }, []);
@@ -168,6 +176,40 @@ function AdminDashboard() {
     } catch (err) { console.error("Error rejecting request:", err); setError(`Failed to reject request: ${err.message}`); }
   };
 
+  // --- WRITING CHALLENGE LOGIC ---
+  const handleCreateWritingTask = async () => {
+    if (!newWritingTask.title || !newWritingTask.question) {
+      setError("Challenge title and question are required.");
+      return;
+    }
+    if (newWritingTask.rewardPoints <= 0) {
+      setError("Reward points must be greater than zero.");
+      return;
+    }
+    if (newWritingTask.minimumWords < 50) {
+      setError("Minimum words must be at least 50.");
+      return;
+    }
+    setError(null); setMessage('');
+    try {
+      await addDoc(collection(db, 'writingTasks'), {
+        ...newWritingTask,
+        active: false, // Default to inactive
+        createdAt: serverTimestamp(),
+      });
+      setNewWritingTask({ title: '', question: '', rewardPoints: 50, minimumWords: 100 });
+      setMessage('Writing challenge created successfully!');
+    } catch (err) { console.error("Error creating writing task:", err); setError("Failed to create writing challenge."); }
+  };
+
+  const toggleWritingTaskStatus = async (taskId, currentStatus) => {
+    try { await updateDoc(doc(db, 'writingTasks', taskId), { active: !currentStatus }); setMessage('Challenge status updated successfully!'); } catch (err) { console.error("Error updating task status:", err); setError("Failed to update challenge status."); }
+  };
+
+  const deleteWritingTask = async (taskId) => {
+    try { await deleteDoc(doc(db, 'writingTasks', taskId)); setMessage('Challenge deleted successfully!'); } catch (err) { console.error("Error deleting task:", err); setError("Failed to delete challenge."); }
+  };
+
   // --- OTHER HANDLERS ---
   const handleLogout = async () => { try { await signOut(auth); navigate('/'); } catch (error) { console.error("Error signing out: ", error); } };
   const handlePublishAnnouncement = async () => {
@@ -231,6 +273,7 @@ function AdminDashboard() {
           <div style={tabContainerStyle}>
               <button style={activeTab === 'announcements' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('announcements')}>Announcement Management</button>
               <button style={activeTab === 'polls' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('polls')}>Poll Management</button>
+              <button style={activeTab === 'writing' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('writing')}>Writing Management</button>
           </div>
           {activeTab === 'announcements' && (
               <>
@@ -264,11 +307,31 @@ function AdminDashboard() {
               tdStyle={tdStyle}
             />
           )}
+          {activeTab === 'writing' && (
+            <WritingManagement
+              tasks={writingTasks}
+              loading={writingTasksLoading}
+              error={error}
+              newTask={newWritingTask}
+              setNewTask={setNewWritingTask}
+              handleCreateTask={handleCreateWritingTask}
+              toggleTaskStatus={toggleWritingTaskStatus}
+              deleteTask={deleteWritingTask}
+              sectionTitleStyle={sectionTitleStyle}
+              announcementFormStyle={announcementFormStyle}
+              inputStyle={inputStyle}
+              textareaStyle={textareaStyle}
+              buttonStyle={buttonStyle}
+              tableStyle={tableStyle}
+              thStyle={thStyle}
+              tdStyle={tdStyle}
+            />
+          )}
           <section>
             <h2 style={sectionTitleStyle}>Redeem Requests</h2>
             <div style={requestsContainerStyle}>
                 <h3 style={{fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem'}}>Pending Requests</h3>
-                <div style={{overflowX: 'auto'}}><table style={tableStyle}><thead><tr><th style={thStyle}>Username</th><th style={thStyle}>User ID</th><th style={thStyle}>Points</th><th style={thStyle}>Requested At</th><th style={thStyle}>Status</th><th style={thStyle}>Actions</th></tr></thead><tbody>{redemptionRequests.length > 0 ? redemptionRequests.map(req => (<tr key={req.id}><td style={tdStyle}>{req.username}</td><td style={tdStyle}>{req.userId}</td><td style={tdStyle}>{req.requestedPoints}</td><td style={tdStyle}>{req.timestamp?.toDate().toLocaleString()}</td><td style={tdStyle}>{req.status}</td><td style={tdStyle}><button style={{...buttonStyle, background: '#28a745'}} onClick={() => handleApprove(req)}>Approve</button><button style={{...buttonStyle, background: '#dc3545'}} onClick={() => handleReject(req)}>Reject</button></td></tr>)) : (<tr><td colSpan="6" style={{...tdStyle, textAlign: 'center'}}>No pending requests.</td></tr>)}</tbody></table></div>
+                <div style={{overflowX: 'auto'}}><table style={tableStyle}><thead><tr><th style={thStyle}>Username</th><th style={thStyle}>User ID</th><th style={thStyle}>UPI ID</th><th style={thStyle}>Points</th><th style={thStyle}>Requested At</th><th style={thStyle}>Status</th><th style={thStyle}>Actions</th></tr></thead><tbody>{redemptionRequests.length > 0 ? redemptionRequests.map(req => (<tr key={req.id}><td style={tdStyle}>{req.username}</td><td style={tdStyle}>{req.userId}</td><td style={tdStyle}>{users.find(user => user.id === req.userId)?.upiId || 'N/A'}</td><td style={tdStyle}>{req.requestedPoints}</td><td style={tdStyle}>{req.timestamp?.toDate().toLocaleString()}</td><td style={tdStyle}>{req.status}</td><td style={tdStyle}><button style={{...buttonStyle, background: '#28a745'}} onClick={() => handleApprove(req)}>Approve</button><button style={{...buttonStyle, background: '#dc3545'}} onClick={() => handleReject(req)}>Reject</button></td></tr>)) : (<tr><td colSpan="7" style={{...tdStyle, textAlign: 'center'}}>No pending requests.</td></tr>)}</tbody></table></div>
                 <div style={{marginTop: '2rem', borderTop: '1px solid #eee', paddingTop: '2rem'}}>
                     <h3 style={{fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem'}}>History</h3>
                     <div><button style={{...buttonStyle, background: showApproved ? '#4a00e0' : '#6c757d'}} onClick={() => {setShowApproved(true); setShowRejected(false);}}>Approved</button><button style={{...buttonStyle, background: showRejected ? '#4a00e0' : '#6c757d'}} onClick={() => {setShowRejected(true); setShowApproved(false);}}>Rejected</button></div>
@@ -279,7 +342,7 @@ function AdminDashboard() {
           </section>
           <section>
             <h2 style={sectionTitleStyle}>User Management</h2>
-            <div style={requestsContainerStyle}><div style={{overflowX: 'auto'}}><table style={tableStyle}><thead><tr><th style={thStyle}>Username</th><th style={thStyle}>Email</th><th style={thStyle}>Points Earned</th><th style={thStyle}>Points Processing</th><th style={thStyle}>Points Redeemed</th></tr></thead><tbody>{users.map(user => (<tr key={user.id}><td style={tdStyle}>{user.username}</td><td style={tdStyle}>{user.email}</td><td style={tdStyle}>{user.pointsEarned || 0}</td><td style={tdStyle}>{user.processingPoints || 0}</td><td style={tdStyle}>{user.redeemedPoints || 0}</td></tr>))}</tbody></table></div></div>
+            <div style={requestsContainerStyle}><div style={{overflowX: 'auto'}}><table style={tableStyle}><thead><tr><th style={thStyle}>Username</th><th style={thStyle}>Email</th><th style={thStyle}>UPI ID</th><th style={thStyle}>Points Earned</th><th style={thStyle}>Points Processing</th><th style={thStyle}>Points Redeemed</th></tr></thead><tbody>{users.map(user => (<tr key={user.id}><td style={tdStyle}>{user.username}</td><td style={tdStyle}>{user.email}</td><td style={tdStyle}>{user.upiId || 'N/A'}</td><td style={tdStyle}>{user.pointsEarned || 0}</td><td style={tdStyle}>{user.processingPoints || 0}</td><td style={tdStyle}>{user.redeemedPoints || 0}</td></tr>))}</tbody></table></div></div>
           </section>
         </>)}
       </main>
