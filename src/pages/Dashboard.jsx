@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
-import { doc, onSnapshot, updateDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, runTransaction, serverTimestamp, collection, query, where, addDoc, getDocs } from 'firebase/firestore';
 import { signOut, sendPasswordResetEmail } from 'firebase/auth';
 import ActivePolls from '../components/user/ActivePolls';
-
+import ActiveWritingChallenges from '../components/user/ActiveWritingChallenges';
 function Dashboard() {
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
