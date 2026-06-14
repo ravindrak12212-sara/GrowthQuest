@@ -23,10 +23,17 @@ function Dashboard() {
   const [upiId, setUpiId] = useState('');
   const [upiModalMessage, setUpiModalMessage] = useState('');
   const [isSavingUpi, setIsSavingUpi] = useState(false);
+
   const navigate = useNavigate();
   const user = auth.currentUser;
   const [announcement, setAnnouncement] = useState(null);
-
+  
+  const [writingTasks, setWritingTasks] = useState([]);
+  const [userWritingResponses, setUserWritingResponses] = useState([]);
+  const [writingLoading, setWritingLoading] = useState(false);
+  const [writingError, setWritingError] = useState('');
+  const [submittingTaskId, setSubmittingTaskId] = useState(null);
+  
   const MILESTONES = { 5: 50, 10: 100, 15: 150, 20: 200, 25: 250, 30: 300 };
 
   useEffect(() => {
