@@ -203,8 +203,44 @@ function Dashboard() {
     }
   };
   
+  const handleWritingSubmission = async (task, response) => {
+    setSubmittingTaskId(task.id);
+    setWritingError('');
+  
+    try {
+      const responsesQuery = query(
+        collection(db, 'writingResponses'),
+        where('taskId', '==', task.id),
+        where('userId', '==', user.uid)
+      );
+  
+      const querySnapshot = await getDocs(responsesQuery);
+  
+      if (!querySnapshot.empty) {
+        setWritingError('You have already submitted a response for this challenge.');
+        return;
+      }
+  
+      await addDoc(collection(db, 'writingResponses'), {
+        taskId: task.id,
+        taskTitle: task.title,
+        userId: user.uid,
+        userEmail: user.email,
+        response,
+        status: 'pending',
+        submittedAt: serverTimestamp(),
+      });
+  
+    } catch (err) {
+      console.error('Error submitting writing response:', err);
+      setWritingError('Failed to submit your response. Please try again.');
+    } finally {
+      setSubmittingTaskId(null);
+    }
+  };
+  
   const handleRedeemNavigation = () => {
-      navigate('/redeem');
+    navigate('/redeem');
   }
   
   const handleQuizNavigation = () => {
