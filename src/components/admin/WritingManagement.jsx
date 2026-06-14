@@ -17,6 +17,7 @@ function WritingManagement({
   tableStyle,
   thStyle,
   tdStyle,
+  writingResponses,
 }) {
   return (
     <section>
@@ -96,6 +97,57 @@ function WritingManagement({
                     </tr>
                   ))
                 ) : ( <tr><td colSpan="6" style={{ ...tdStyle, textAlign: 'center' }}>No writing challenges found.</td></tr> )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      <div style={{ ...announcementFormStyle, marginTop: '2rem' }}>
+        <h3 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem' }}>
+          Easy Writing Submissions
+        </h3>
+
+        {writingResponses.length === 0 ? (
+          <p>No writing submissions found.</p>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>User</th>
+                  <th style={thStyle}>Challenge</th>
+                  <th style={thStyle}>Response</th>
+                  <th style={thStyle}>Status</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {writingResponses.map((submission) => (
+                  <tr key={submission.id}>
+                    <td style={tdStyle}>
+                      {submission.userEmail || 'N/A'}
+                    </td>
+
+                    <td style={tdStyle}>
+                      {submission.taskTitle || 'N/A'}
+                    </td>
+
+                    <td
+                      style={{
+                        ...tdStyle,
+                        maxWidth: '400px',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word'
+                      }}
+                    >
+                      {submission.response}
+                    </td>
+
+                    <td style={tdStyle}>
+                      {submission.status || 'pending'}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

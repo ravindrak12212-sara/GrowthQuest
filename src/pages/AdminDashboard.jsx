@@ -49,6 +49,7 @@ function AdminDashboard() {
   // WRITING MANAGEMENT STATE
   const [writingTasks, setWritingTasks] = useState([]);
   const [newWritingTask, setNewWritingTask] = useState({ title: '', question: '', rewardPoints: 50, minimumWords: 100 });
+  const [writingResponses, setWritingResponses] = useState([]);
 
 
   // --- FIRESTORE LISTENERS ---
@@ -69,6 +70,26 @@ function AdminDashboard() {
     unsubscribes.push(onSnapshot(rejectedQuery, (snapshot) => { setRejectedRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }));
     const writingTasksQuery = query(collection(db, "writingTasks"), orderBy("createdAt", "desc"));
     unsubscribes.push(onSnapshot(writingTasksQuery, (snapshot) => { setWritingTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setWritingTasksLoading(false); }, (err) => { console.error("Writing tasks listener error:", err); setWritingTasksLoading(false); }));
+
+    const writingResponsesQuery = query(
+        collection(db, "writingResponses"),
+        orderBy("submittedAt", "desc")
+    );
+
+    unsubscribes.push(onSnapshot(
+        writingResponsesQuery,
+        (snapshot) => {
+            setWritingResponses(
+                snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }))
+            );
+        },
+        (err) => {
+            console.error("Writing responses listener error:", err);
+        }
+    ));
 
     return () => unsubscribes.forEach(unsub => unsub());
   }, []);
@@ -326,6 +347,7 @@ function AdminDashboard() {
               tableStyle={tableStyle}
               thStyle={thStyle}
               tdStyle={tdStyle}
+              writingResponses={writingResponses}
             />
           )}
           <section>

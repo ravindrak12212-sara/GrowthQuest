@@ -5,6 +5,7 @@ import { doc, onSnapshot, updateDoc, runTransaction, serverTimestamp, collection
 import { signOut, sendPasswordResetEmail } from 'firebase/auth';
 import ActivePolls from '../components/user/ActivePolls';
 import ActiveWritingChallenges from '../components/user/ActiveWritingChallenges';
+
 function Dashboard() {
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -233,7 +234,7 @@ function Dashboard() {
   
     } catch (err) {
       console.error('Error submitting writing response:', err);
-      setWritingError('Failed to submit your response. Please try again.');
+      setWritingError(`Failed to submit: ${err.message}`);
     } finally {
       setSubmittingTaskId(null);
     }
@@ -561,6 +562,10 @@ function Dashboard() {
     return <div style={{textAlign: 'center', marginTop: '50px'}}>{error}</div>;
   }
 
+  const submittedTaskIds = userWritingResponses.map(
+    response => response.taskId
+  );
+
   return (
     <div style={pageStyle}>
         <div style={backdropStyle} onClick={() => setDrawerOpen(false)}></div>
@@ -757,6 +762,17 @@ function Dashboard() {
 
         <section style={{ marginBottom: '2rem' }}>
           <ActivePolls />
+        </section>
+
+        <section style={{ marginBottom: '2rem' }}>
+            <ActiveWritingChallenges
+                tasks={writingTasks}
+                submittedTaskIds={submittedTaskIds}
+                loading={writingLoading}
+                error={writingError}
+                submittingTaskId={submittingTaskId}
+                onSubmit={handleWritingSubmission}
+            />
         </section>
 
         <section>
