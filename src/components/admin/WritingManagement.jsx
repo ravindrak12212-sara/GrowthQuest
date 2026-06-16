@@ -18,6 +18,7 @@ function WritingManagement({
   tdStyle,
   writingResponses,
   handleRejectWritingSubmission,
+  handleApproveWritingSubmission,
 }) {
   return (
     <section>
@@ -149,12 +150,20 @@ function WritingManagement({
                     </td>
                     <td style={tdStyle}>
                       {(submission.status || 'pending') === 'pending' ? (
+                        <>
+                        <button
+                          style={{ ...buttonStyle, background: '#28a745', marginRight: '5px' }}
+                          onClick={() => handleApproveWritingSubmission(submission)}
+                        >
+                          Approve
+                        </button>
                         <button
                           style={{ ...buttonStyle, background: '#dc3545' }}
                           onClick={() => handleRejectWritingSubmission(submission)}
                         >
                           Reject
                         </button>
+                        </>
                       ) : (
                         '-'
                       )}

@@ -269,6 +269,26 @@ function AdminDashboard() {
       setError("Failed to reject submission.");
     }
   };
+
+  const handleApproveWritingSubmission = async (submission) => {
+    setMessage('');
+    setError(null);
+  
+    try {
+      await updateDoc(
+        doc(db, "writingResponses", submission.id),
+        {
+          status: "approved",
+          reviewedAt: serverTimestamp(),
+        }
+      );
+  
+      setMessage("Submission approved successfully.");
+    } catch (err) {
+      console.error("Error approving writing submission:", err);
+      setError("Failed to approve submission.");
+    }
+  };
   // --- STYLES (UNCHANGED) ---
   const pageStyle = { fontFamily: `'Segoe UI', Tahoma, Geneva, Verdana, sans-serif`, backgroundColor: '#f4f7f6', color: '#333', minHeight: '100vh' };
   const navStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 2rem', backgroundColor: 'white', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', position: 'sticky', top: 0, zIndex: 1000 };
@@ -368,6 +388,7 @@ function AdminDashboard() {
               tdStyle={tdStyle}
               writingResponses={writingResponses}
               handleRejectWritingSubmission={handleRejectWritingSubmission}
+              handleApproveWritingSubmission={handleApproveWritingSubmission}
             />
           )}
           <section>
