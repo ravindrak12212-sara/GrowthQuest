@@ -1,4 +1,3 @@
-
 import React from 'react';
 
 function WritingManagement({
@@ -18,7 +17,7 @@ function WritingManagement({
   thStyle,
   tdStyle,
   writingResponses,
-
+  handleRejectWritingSubmission,
 }) {
   return (
     <section>
@@ -149,26 +148,17 @@ function WritingManagement({
                       {submission.status || 'pending'}
                     </td>
                     <td style={tdStyle}>
-  {(submission.status || 'pending') === 'pending' ? (
-    <>
-      <button
-        style={{ ...buttonStyle, background: '#28a745', marginRight: '10px' }}
-        onClick={() => handleApproveWritingSubmission(submission)}
-      >
-        Approve
-      </button>
-
-      <button
-        style={{ ...buttonStyle, background: '#dc3545' }}
-        onClick={() => handleRejectWritingSubmission(submission)}
-      >
-        Reject
-      </button>
-    </>
-  ) : (
-    '-'
-  )}
-</td>
+                      {(submission.status || 'pending') === 'pending' ? (
+                        <button
+                          style={{ ...buttonStyle, background: '#dc3545' }}
+                          onClick={() => handleRejectWritingSubmission(submission)}
+                        >
+                          Reject
+                        </button>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
