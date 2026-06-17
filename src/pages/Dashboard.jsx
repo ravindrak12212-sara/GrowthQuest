@@ -773,6 +773,7 @@ function Dashboard() {
                 error={writingError}
                 submittingTaskId={submittingTaskId}
                 onSubmit={handleWritingSubmission}
+                userWritingResponses={userWritingResponses}
             />
         </section>
 
