@@ -226,6 +226,7 @@ function Dashboard() {
         taskId: task.id,
         taskTitle: task.title,
         userId: user.uid,
+        rewardPoints: task.rewardPoints,
         userEmail: user.email,
         response,
         status: 'pending',

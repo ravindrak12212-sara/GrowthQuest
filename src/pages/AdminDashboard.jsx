@@ -273,20 +273,30 @@ function AdminDashboard() {
   const handleApproveWritingSubmission = async (submission) => {
     setMessage('');
     setError(null);
-  
+
     try {
-      await updateDoc(
-        doc(db, "writingResponses", submission.id),
-        {
+      await runTransaction(db, async (transaction) => {
+        const submissionRef = doc(db, "writingResponses", submission.id);
+        const submissionDoc = await transaction.get(submissionRef);
+
+        if (!submissionDoc.exists() || submissionDoc.data().status !== 'pending') {
+          throw new Error("Submission has already been processed or does not exist.");
+        }
+
+        transaction.update(submissionRef, {
           status: "approved",
           reviewedAt: serverTimestamp(),
-        }
-      );
-  
+        });
+
+        const userRef = doc(db, "users", submission.userId);
+        transaction.update(userRef, {
+          pointsEarned: increment(submission.rewardPoints),
+        });
+      });
       setMessage("Submission approved successfully.");
     } catch (err) {
       console.error("Error approving writing submission:", err);
-      setError("Failed to approve submission.");
+      setError(err.message || "Failed to approve submission.");
     }
   };
   // --- STYLES (UNCHANGED) ---
