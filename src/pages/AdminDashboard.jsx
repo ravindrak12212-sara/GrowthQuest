@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
 import { signOut } from 'firebase/auth';
-import { collection, query, where, onSnapshot, doc, runTransaction, increment, serverTimestamp, setDoc, deleteDoc, orderBy, limit, addDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, runTransaction, increment, serverTimestamp, setDoc, deleteDoc, orderBy, limit, addDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import PollManagement from '../components/admin/PollManagement';
 import WritingManagement from '../components/admin/WritingManagement';
 
@@ -25,7 +25,7 @@ function AdminDashboard() {
   const [announcementLoading, setAnnouncementLoading] = useState(true);
 
   // TABS
-  const [activeTab, setActiveTab] = useState('announcements');
+  const [activeTab, setActiveTab] = useState('polls');
 
   // ANNOUNCEMENTS
   const [announcementTitle, setAnnouncementTitle] = useState('');
@@ -213,6 +213,33 @@ function AdminDashboard() {
         setEditingPoll(null);
         setError(null);
         setMessage('');
+    };
+
+    const handleEditClick = (poll) => {
+        const pollData = { ...poll };
+        if (poll.startTime) {
+            const startTimeAsDate = poll.startTime.toDate ? poll.startTime.toDate() : poll.startTime;
+            pollData.startTime = new Date(startTimeAsDate.getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+        }
+        if (poll.endTime) {
+            const endTimeAsDate = poll.endTime.toDate ? poll.endTime.toDate() : poll.endTime;
+            pollData.endTime = new Date(endTimeAsDate.getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+        }
+        setEditingPoll(pollData);
+    };
+
+    const handleArchivePoll = async (pollId) => {
+      setError(null); setMessage('');
+      try {
+          await updateDoc(doc(db, 'polls', pollId), {
+              archived: true,
+              archivedAt: serverTimestamp()
+          });
+          setMessage('Poll archived successfully!');
+      } catch (err) {
+          console.error("Error archiving poll:", err);
+          setError("Failed to archive poll.");
+      }
     };
 
   const togglePollStatus = async (pollId, currentStatus) => {
@@ -432,13 +459,15 @@ function AdminDashboard() {
                 loading={pollsLoading}
                 error={error}
                 newPoll={newPoll}
-                editingPoll={editingPoll}
                 setNewPoll={setNewPoll}
+                editingPoll={editingPoll}
                 setEditingPoll={setEditingPoll}
                 handleCreatePoll={handleCreatePoll}
                 handleUpdatePoll={handleUpdatePoll}
                 handleCancelEdit={handleCancelEdit}
+                handleEditClick={handleEditClick}
                 togglePollStatus={togglePollStatus}
+                handleArchivePoll={handleArchivePoll}
                 deletePoll={deletePoll}
                 handleOptionChange={handleOptionChange}
                 addOption={addOption}
