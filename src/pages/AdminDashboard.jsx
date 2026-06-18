@@ -52,6 +52,28 @@ function AdminDashboard() {
   const [newWritingTask, setNewWritingTask] = useState({ title: '', question: '', rewardPoints: 50, minimumWords: 100 });
   const [writingResponses, setWritingResponses] = useState([]);
 
+  const formatLastSeen = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    const lastSeenDate = timestamp.toDate();
+    const now = new Date();
+
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+
+    const lastSeenDay = new Date(lastSeenDate.getFullYear(), lastSeenDate.getMonth(), lastSeenDate.getDate());
+
+    const timeString = lastSeenDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true });
+
+    if (lastSeenDay.getTime() === today.getTime()) {
+        return `Today ${timeString}`;
+    } else if (lastSeenDay.getTime() === yesterday.getTime()) {
+        return `Yesterday ${timeString}`;
+    } else {
+        const dateString = lastSeenDate.toLocaleDateString('en-GB');
+        return `${dateString} ${timeString}`;
+    }
+};
+
 
   // --- FIRESTORE LISTENERS ---
   useEffect(() => {
@@ -523,7 +545,7 @@ function AdminDashboard() {
           </section>
           <section>
             <h2 style={sectionTitleStyle}>User Management</h2>
-            <div style={requestsContainerStyle}><div style={{overflowX: 'auto'}}><table style={tableStyle}><thead><tr><th style={thStyle}>Username</th><th style={thStyle}>Email</th><th style={thStyle}>UPI ID</th><th style={thStyle}>Points Earned</th><th style={thStyle}>Points Processing</th><th style={thStyle}>Points Redeemed</th></tr></thead><tbody>{users.map(user => (<tr key={user.id}><td style={tdStyle}>{user.username}</td><td style={tdStyle}>{user.email}</td><td style={tdStyle}>{user.upiId || 'N/A'}</td><td style={tdStyle}>{user.pointsEarned || 0}</td><td style={tdStyle}>{user.processingPoints || 0}</td><td style={tdStyle}>{user.redeemedPoints || 0}</td></tr>))}</tbody></table></div></div>
+            <div style={requestsContainerStyle}><div style={{overflowX: 'auto'}}><table style={tableStyle}><thead><tr><th style={thStyle}>Username</th><th style={thStyle}>Email</th><th style={thStyle}>Status</th><th style={thStyle}>UPI ID</th><th style={thStyle}>Points Earned</th><th style={thStyle}>Points Processing</th><th style={thStyle}>Points Redeemed</th></tr></thead><tbody>{users.map(user => (<tr key={user.id}><td style={tdStyle}>{user.username}</td><td style={tdStyle}>{user.email}</td><td style={tdStyle}>{user.online ? (<span>🟢 Online</span>) : (<span>🔴 Last seen: {formatLastSeen(user.lastSeen)}</span>)}</td><td style={tdStyle}>{user.upiId || 'N/A'}</td><td style={tdStyle}>{user.pointsEarned || 0}</td><td style={tdStyle}>{user.processingPoints || 0}</td><td style={tdStyle}>{user.redeemedPoints || 0}</td></tr>))}</tbody></table></div></div>
           </section>
         </>)}
       </main>
