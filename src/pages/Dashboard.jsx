@@ -196,6 +196,14 @@ function Dashboard() {
   const handleLogout = async () => {
     setLogoutError('');
     try {
+      const user = auth.currentUser;
+      if (user) {
+        const userDocRef = doc(db, 'users', user.uid);
+        await updateDoc(userDocRef, {
+          online: false,
+          lastSeen: serverTimestamp(),
+        });
+      }
       await signOut(auth);
       navigate('/');
     } catch (error) {

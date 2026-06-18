@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
 import { signOut } from 'firebase/auth';
-import { collection, query, where, onSnapshot, doc, runTransaction, increment, serverTimestamp, setDoc, deleteDoc, orderBy, limit, addDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, runTransaction, increment, serverTimestamp, setDoc, deleteDoc, orderBy, limit, addDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import PollManagement from '../components/admin/PollManagement';
 import WritingManagement from '../components/admin/WritingManagement';
 
@@ -25,7 +25,7 @@ function AdminDashboard() {
   const [announcementLoading, setAnnouncementLoading] = useState(true);
 
   // TABS
-  const [activeTab, setActiveTab] = useState('announcements');
+  const [activeTab, setActiveTab] = useState('polls');
 
   // ANNOUNCEMENTS
   const [announcementTitle, setAnnouncementTitle] = useState('');
@@ -41,7 +41,8 @@ function AdminDashboard() {
   const [showRejected, setShowRejected] = useState(false);
   
   // POLL MANAGEMENT STATE
-  const [newPoll, setNewPoll] = useState({ question: '', options: ['', ''] });
+  const [newPoll, setNewPoll] = useState({ question: '', options: ['', ''], startTime: '', endTime: '' });
+  const [editingPoll, setEditingPoll] = useState(null);
   const [selectedPoll, setSelectedPoll] = useState(null);
   const [pollResponses, setPollResponses] = useState([]);
   const [responsesLoading, setResponsesLoading] = useState(false);
@@ -51,6 +52,28 @@ function AdminDashboard() {
   const [newWritingTask, setNewWritingTask] = useState({ title: '', question: '', rewardPoints: 50, minimumWords: 100 });
   const [writingResponses, setWritingResponses] = useState([]);
 
+  const formatLastSeen = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    const lastSeenDate = timestamp.toDate();
+    const now = new Date();
+
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+
+    const lastSeenDay = new Date(lastSeenDate.getFullYear(), lastSeenDate.getMonth(), lastSeenDate.getDate());
+
+    const timeString = lastSeenDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true });
+
+    if (lastSeenDay.getTime() === today.getTime()) {
+        return `Today ${timeString}`;
+    } else if (lastSeenDay.getTime() === yesterday.getTime()) {
+        return `Yesterday ${timeString}`;
+    } else {
+        const dateString = lastSeenDate.toLocaleDateString('en-GB');
+        return `${dateString} ${timeString}`;
+    }
+};
+
 
   // --- FIRESTORE LISTENERS ---
   useEffect(() => {
@@ -58,7 +81,7 @@ function AdminDashboard() {
     // Master Listeners
     const usersQuery = query(collection(db, "users"));
     unsubscribes.push(onSnapshot(usersQuery, (snapshot) => { setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setUsersLoading(false); }, (err) => { console.error("User listener error:", err); setError("Failed to fetch user data."); setUsersLoading(false); }));
-    const pollsQuery = query(collection(db, "polls"));
+    const pollsQuery = query(collection(db, "polls"), orderBy("createdAt", "desc"));
     unsubscribes.push(onSnapshot(pollsQuery, (snapshot) => { setPolls(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setPollsLoading(false); }, (err) => { console.error("Poll listener error:", err); setError("Failed to fetch poll data."); setPollsLoading(false); }));
     const announcementRef = doc(db, 'announcements', 'current');
     unsubscribes.push(onSnapshot(announcementRef, (docSnap) => { setCurrentAnnouncement(docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null); setAnnouncementLoading(false); }, (err) => { console.error("Announcement listener error:", err); setAnnouncementLoading(false); }));
@@ -122,24 +145,124 @@ function AdminDashboard() {
   }, [usersLoading, pollsLoading, requestsLoading, announcementLoading]);
 
   // --- POLL MANAGEMENT LOGIC ---
+    const toDateTime = (dateTimeString) => {
+        if (!dateTimeString) return null;
+        const dt = new Date(dateTimeString);
+        return isNaN(dt.getTime()) ? null : dt;
+    };
+
+    const validatePollData = (pollData) => {
+        const { question, options, startTime, endTime } = pollData;
+
+        if (!question.trim()) return "Poll question cannot be empty.";
+        if (options.length < 2) return "Poll must have at least 2 options.";
+        if (options.length > 6) return "Poll can have a maximum of 6 options.";
+        if (options.some(opt => !opt.trim())) return "All poll options must be filled.";
+
+        const uniqueOptions = new Set(options.map(opt => opt.trim().toLowerCase()));
+        if (uniqueOptions.size !== options.length) return "Poll options must be unique.";
+
+        const startDateTime = toDateTime(startTime);
+        const endDateTime = toDateTime(endTime);
+
+        if (endDateTime && !startDateTime) return "A start time must be set if an end time is specified.";
+        if (startDateTime && endDateTime && startDateTime >= endDateTime) return "End time must be after the start time.";
+
+        return null;
+    };
+
   const handleOptionChange = (index, value) => {
     const updatedOptions = [...newPoll.options];
     updatedOptions[index] = value;
     setNewPoll({ ...newPoll, options: updatedOptions });
   };
 
-  const addOption = () => { setNewPoll({ ...newPoll, options: [...newPoll.options, ''] }); };
-  const removeOption = (index) => { const updatedOptions = newPoll.options.filter((_, i) => i !== index); setNewPoll({ ...newPoll, options: updatedOptions }); };
+  const addOption = () => { if (newPoll.options.length < 6) setNewPoll({ ...newPoll, options: [...newPoll.options, ''] }); };
+  const removeOption = (index) => { if (newPoll.options.length > 2) { const updatedOptions = newPoll.options.filter((_, i) => i !== index); setNewPoll({ ...newPoll, options: updatedOptions }); }};
 
-  const handleCreatePoll = async () => {
-    if (!newPoll.question || newPoll.options.some(opt => !opt)) { setError("Please fill in the poll question and all options."); return; }
-    setError(null); setMessage('');
-    try {
-        await addDoc(collection(db, 'polls'), { ...newPoll, active: true, archived: false, rewardPoints: 10, createdAt: serverTimestamp(), votes: {} });
-        setNewPoll({ question: '', options: ['', ''] });
-        setMessage('Poll created successfully!');
-    } catch (err) { console.error("Error creating poll:", err); setError("Failed to create poll."); }
-  };
+    const handleCreatePoll = async () => {
+        setError(null);
+        setMessage('');
+        const validationError = validatePollData(newPoll);
+        if (validationError) {
+            setError(validationError);
+            return;
+        }
+        try {
+            await addDoc(collection(db, 'polls'), {
+                question: newPoll.question,
+                options: newPoll.options,
+                startTime: toDateTime(newPoll.startTime),
+                endTime: toDateTime(newPoll.endTime),
+                active: true,
+                archived: false,
+                createdAt: serverTimestamp(),
+            });
+            setNewPoll({ question: '', options: ['', ''], startTime: '', endTime: '' });
+            setMessage('Poll created successfully!');
+        } catch (err) {
+            console.error("Error creating poll:", err);
+            setError("Failed to create poll.");
+        }
+    };
+
+    const handleUpdatePoll = async () => {
+        if (!editingPoll) return;
+        setError(null);
+        setMessage('');
+        const validationError = validatePollData(editingPoll);
+        if (validationError) {
+            setError(validationError);
+            return;
+        }
+        try {
+            const pollRef = doc(db, 'polls', editingPoll.id);
+            await updateDoc(pollRef, {
+                question: editingPoll.question,
+                options: editingPoll.options,
+                startTime: toDateTime(editingPoll.startTime),
+                endTime: toDateTime(editingPoll.endTime),
+            });
+            setEditingPoll(null);
+            setMessage('Poll updated successfully!');
+        } catch (err) {
+            console.error("Error updating poll:", err);
+            setError("Failed to update poll.");
+        }
+    };
+
+    const handleCancelEdit = () => {
+        setEditingPoll(null);
+        setError(null);
+        setMessage('');
+    };
+
+    const handleEditClick = (poll) => {
+        const pollData = { ...poll };
+        if (poll.startTime) {
+            const startTimeAsDate = poll.startTime.toDate ? poll.startTime.toDate() : poll.startTime;
+            pollData.startTime = new Date(startTimeAsDate.getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+        }
+        if (poll.endTime) {
+            const endTimeAsDate = poll.endTime.toDate ? poll.endTime.toDate() : poll.endTime;
+            pollData.endTime = new Date(endTimeAsDate.getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+        }
+        setEditingPoll(pollData);
+    };
+
+    const handleArchivePoll = async (pollId) => {
+      setError(null); setMessage('');
+      try {
+          await updateDoc(doc(db, 'polls', pollId), {
+              archived: true,
+              archivedAt: serverTimestamp()
+          });
+          setMessage('Poll archived successfully!');
+      } catch (err) {
+          console.error("Error archiving poll:", err);
+          setError("Failed to archive poll.");
+      }
+    };
 
   const togglePollStatus = async (pollId, currentStatus) => {
       setError(null); setMessage('');
@@ -354,28 +477,34 @@ function AdminDashboard() {
           )}
           {activeTab === 'polls' && (
             <PollManagement
-              polls={polls}
-              loading={pollsLoading}
-              error={error}
-              newPoll={newPoll}
-              setNewPoll={setNewPoll}
-              handleCreatePoll={handleCreatePoll}
-              togglePollStatus={togglePollStatus}
-              deletePoll={deletePoll}
-              handleOptionChange={handleOptionChange}
-              addOption={addOption}
-              removeOption={removeOption}
-              selectedPoll={selectedPoll}
-              setSelectedPoll={setSelectedPoll}
-              pollResponses={pollResponses}
-              responsesLoading={responsesLoading}
-              sectionTitleStyle={sectionTitleStyle}
-              announcementFormStyle={announcementFormStyle}
-              inputStyle={inputStyle}
-              buttonStyle={buttonStyle}
-              tableStyle={tableStyle}
-              thStyle={thStyle}
-              tdStyle={tdStyle}
+                polls={polls}
+                loading={pollsLoading}
+                error={error}
+                newPoll={newPoll}
+                setNewPoll={setNewPoll}
+                editingPoll={editingPoll}
+                setEditingPoll={setEditingPoll}
+                handleCreatePoll={handleCreatePoll}
+                handleUpdatePoll={handleUpdatePoll}
+                handleCancelEdit={handleCancelEdit}
+                handleEditClick={handleEditClick}
+                togglePollStatus={togglePollStatus}
+                handleArchivePoll={handleArchivePoll}
+                deletePoll={deletePoll}
+                handleOptionChange={handleOptionChange}
+                addOption={addOption}
+                removeOption={removeOption}
+                selectedPoll={selectedPoll}
+                setSelectedPoll={setSelectedPoll}
+                pollResponses={pollResponses}
+                responsesLoading={responsesLoading}
+                sectionTitleStyle={sectionTitleStyle}
+                announcementFormStyle={announcementFormStyle}
+                inputStyle={inputStyle}
+                buttonStyle={buttonStyle}
+                tableStyle={tableStyle}
+                thStyle={thStyle}
+                tdStyle={tdStyle}
             />
           )}
           {activeTab === 'writing' && (
@@ -416,7 +545,7 @@ function AdminDashboard() {
           </section>
           <section>
             <h2 style={sectionTitleStyle}>User Management</h2>
-            <div style={requestsContainerStyle}><div style={{overflowX: 'auto'}}><table style={tableStyle}><thead><tr><th style={thStyle}>Username</th><th style={thStyle}>Email</th><th style={thStyle}>UPI ID</th><th style={thStyle}>Points Earned</th><th style={thStyle}>Points Processing</th><th style={thStyle}>Points Redeemed</th></tr></thead><tbody>{users.map(user => (<tr key={user.id}><td style={tdStyle}>{user.username}</td><td style={tdStyle}>{user.email}</td><td style={tdStyle}>{user.upiId || 'N/A'}</td><td style={tdStyle}>{user.pointsEarned || 0}</td><td style={tdStyle}>{user.processingPoints || 0}</td><td style={tdStyle}>{user.redeemedPoints || 0}</td></tr>))}</tbody></table></div></div>
+            <div style={requestsContainerStyle}><div style={{overflowX: 'auto'}}><table style={tableStyle}><thead><tr><th style={thStyle}>Username</th><th style={thStyle}>Email</th><th style={thStyle}>Status</th><th style={thStyle}>UPI ID</th><th style={thStyle}>Points Earned</th><th style={thStyle}>Points Processing</th><th style={thStyle}>Points Redeemed</th></tr></thead><tbody>{users.map(user => (<tr key={user.id}><td style={tdStyle}>{user.username}</td><td style={tdStyle}>{user.email}</td><td style={tdStyle}>{user.online ? (<span>🟢 Online</span>) : (<span>🔴 Last seen: {formatLastSeen(user.lastSeen)}</span>)}</td><td style={tdStyle}>{user.upiId || 'N/A'}</td><td style={tdStyle}>{user.pointsEarned || 0}</td><td style={tdStyle}>{user.processingPoints || 0}</td><td style={tdStyle}>{user.redeemedPoints || 0}</td></tr>))}</tbody></table></div></div>
           </section>
         </>)}
       </main>

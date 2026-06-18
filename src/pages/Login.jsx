@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 
 function Login() {
   const [isCreatingAccount, setIsCreatingAccount] = useState(false);
@@ -46,6 +46,12 @@ function Login() {
       } else {
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
+
+        const userDocRef = doc(db, 'users', user.uid);
+        await updateDoc(userDocRef, {
+            online: true,
+            lastSeen: serverTimestamp()
+        });
 
         if (user.email.toLowerCase() === 'ravindrak12212@gmail.com') {
             navigate('/admin');
