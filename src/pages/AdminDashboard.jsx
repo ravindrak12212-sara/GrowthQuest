@@ -41,7 +41,8 @@ function AdminDashboard() {
   const [showRejected, setShowRejected] = useState(false);
   
   // POLL MANAGEMENT STATE
-  const [newPoll, setNewPoll] = useState({ question: '', options: ['', ''] });
+  const [newPoll, setNewPoll] = useState({ question: '', options: ['', ''], startTime: '', endTime: '' });
+  const [editingPoll, setEditingPoll] = useState(null);
   const [selectedPoll, setSelectedPoll] = useState(null);
   const [pollResponses, setPollResponses] = useState([]);
   const [responsesLoading, setResponsesLoading] = useState(false);
@@ -58,7 +59,7 @@ function AdminDashboard() {
     // Master Listeners
     const usersQuery = query(collection(db, "users"));
     unsubscribes.push(onSnapshot(usersQuery, (snapshot) => { setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setUsersLoading(false); }, (err) => { console.error("User listener error:", err); setError("Failed to fetch user data."); setUsersLoading(false); }));
-    const pollsQuery = query(collection(db, "polls"));
+    const pollsQuery = query(collection(db, "polls"), orderBy("createdAt", "desc"));
     unsubscribes.push(onSnapshot(pollsQuery, (snapshot) => { setPolls(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setPollsLoading(false); }, (err) => { console.error("Poll listener error:", err); setError("Failed to fetch poll data."); setPollsLoading(false); }));
     const announcementRef = doc(db, 'announcements', 'current');
     unsubscribes.push(onSnapshot(announcementRef, (docSnap) => { setCurrentAnnouncement(docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null); setAnnouncementLoading(false); }, (err) => { console.error("Announcement listener error:", err); setAnnouncementLoading(false); }));
@@ -122,24 +123,97 @@ function AdminDashboard() {
   }, [usersLoading, pollsLoading, requestsLoading, announcementLoading]);
 
   // --- POLL MANAGEMENT LOGIC ---
+    const toDateTime = (dateTimeString) => {
+        if (!dateTimeString) return null;
+        const dt = new Date(dateTimeString);
+        return isNaN(dt.getTime()) ? null : dt;
+    };
+
+    const validatePollData = (pollData) => {
+        const { question, options, startTime, endTime } = pollData;
+
+        if (!question.trim()) return "Poll question cannot be empty.";
+        if (options.length < 2) return "Poll must have at least 2 options.";
+        if (options.length > 6) return "Poll can have a maximum of 6 options.";
+        if (options.some(opt => !opt.trim())) return "All poll options must be filled.";
+
+        const uniqueOptions = new Set(options.map(opt => opt.trim().toLowerCase()));
+        if (uniqueOptions.size !== options.length) return "Poll options must be unique.";
+
+        const startDateTime = toDateTime(startTime);
+        const endDateTime = toDateTime(endTime);
+
+        if (endDateTime && !startDateTime) return "A start time must be set if an end time is specified.";
+        if (startDateTime && endDateTime && startDateTime >= endDateTime) return "End time must be after the start time.";
+
+        return null;
+    };
+
   const handleOptionChange = (index, value) => {
     const updatedOptions = [...newPoll.options];
     updatedOptions[index] = value;
     setNewPoll({ ...newPoll, options: updatedOptions });
   };
 
-  const addOption = () => { setNewPoll({ ...newPoll, options: [...newPoll.options, ''] }); };
-  const removeOption = (index) => { const updatedOptions = newPoll.options.filter((_, i) => i !== index); setNewPoll({ ...newPoll, options: updatedOptions }); };
+  const addOption = () => { if (newPoll.options.length < 6) setNewPoll({ ...newPoll, options: [...newPoll.options, ''] }); };
+  const removeOption = (index) => { if (newPoll.options.length > 2) { const updatedOptions = newPoll.options.filter((_, i) => i !== index); setNewPoll({ ...newPoll, options: updatedOptions }); }};
 
-  const handleCreatePoll = async () => {
-    if (!newPoll.question || newPoll.options.some(opt => !opt)) { setError("Please fill in the poll question and all options."); return; }
-    setError(null); setMessage('');
-    try {
-        await addDoc(collection(db, 'polls'), { ...newPoll, active: true, archived: false, rewardPoints: 10, createdAt: serverTimestamp(), votes: {} });
-        setNewPoll({ question: '', options: ['', ''] });
-        setMessage('Poll created successfully!');
-    } catch (err) { console.error("Error creating poll:", err); setError("Failed to create poll."); }
-  };
+    const handleCreatePoll = async () => {
+        setError(null);
+        setMessage('');
+        const validationError = validatePollData(newPoll);
+        if (validationError) {
+            setError(validationError);
+            return;
+        }
+        try {
+            await addDoc(collection(db, 'polls'), {
+                question: newPoll.question,
+                options: newPoll.options,
+                startTime: toDateTime(newPoll.startTime),
+                endTime: toDateTime(newPoll.endTime),
+                active: true,
+                archived: false,
+                createdAt: serverTimestamp(),
+            });
+            setNewPoll({ question: '', options: ['', ''], startTime: '', endTime: '' });
+            setMessage('Poll created successfully!');
+        } catch (err) {
+            console.error("Error creating poll:", err);
+            setError("Failed to create poll.");
+        }
+    };
+
+    const handleUpdatePoll = async () => {
+        if (!editingPoll) return;
+        setError(null);
+        setMessage('');
+        const validationError = validatePollData(editingPoll);
+        if (validationError) {
+            setError(validationError);
+            return;
+        }
+        try {
+            const pollRef = doc(db, 'polls', editingPoll.id);
+            await updateDoc(pollRef, {
+                question: editingPoll.question,
+                options: editingPoll.options,
+                startTime: toDateTime(editingPoll.startTime),
+                endTime: toDateTime(editingPoll.endTime),
+            });
+            setEditingPoll(null);
+            setMessage('Poll updated successfully!');
+        } catch (err) {
+            console.error("Error updating poll:", err);
+            setError("Failed to update poll.");
+        }
+    };
+
+    const handleCancelEdit = () => {
+        setEditingPoll(null);
+        setError(null);
+        setMessage('');
+    };
 
   const togglePollStatus = async (pollId, currentStatus) => {
       setError(null); setMessage('');
@@ -354,28 +428,32 @@ function AdminDashboard() {
           )}
           {activeTab === 'polls' && (
             <PollManagement
-              polls={polls}
-              loading={pollsLoading}
-              error={error}
-              newPoll={newPoll}
-              setNewPoll={setNewPoll}
-              handleCreatePoll={handleCreatePoll}
-              togglePollStatus={togglePollStatus}
-              deletePoll={deletePoll}
-              handleOptionChange={handleOptionChange}
-              addOption={addOption}
-              removeOption={removeOption}
-              selectedPoll={selectedPoll}
-              setSelectedPoll={setSelectedPoll}
-              pollResponses={pollResponses}
-              responsesLoading={responsesLoading}
-              sectionTitleStyle={sectionTitleStyle}
-              announcementFormStyle={announcementFormStyle}
-              inputStyle={inputStyle}
-              buttonStyle={buttonStyle}
-              tableStyle={tableStyle}
-              thStyle={thStyle}
-              tdStyle={tdStyle}
+                polls={polls}
+                loading={pollsLoading}
+                error={error}
+                newPoll={newPoll}
+                editingPoll={editingPoll}
+                setNewPoll={setNewPoll}
+                setEditingPoll={setEditingPoll}
+                handleCreatePoll={handleCreatePoll}
+                handleUpdatePoll={handleUpdatePoll}
+                handleCancelEdit={handleCancelEdit}
+                togglePollStatus={togglePollStatus}
+                deletePoll={deletePoll}
+                handleOptionChange={handleOptionChange}
+                addOption={addOption}
+                removeOption={removeOption}
+                selectedPoll={selectedPoll}
+                setSelectedPoll={setSelectedPoll}
+                pollResponses={pollResponses}
+                responsesLoading={responsesLoading}
+                sectionTitleStyle={sectionTitleStyle}
+                announcementFormStyle={announcementFormStyle}
+                inputStyle={inputStyle}
+                buttonStyle={buttonStyle}
+                tableStyle={tableStyle}
+                thStyle={thStyle}
+                tdStyle={tdStyle}
             />
           )}
           {activeTab === 'writing' && (
