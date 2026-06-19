@@ -100,15 +100,30 @@ function Dashboard({ handleLogout }) {
         );
       });
 
-      const historyQuery = query(
-        collection(db, "redemptionRequests"), 
-        where("userId", "==", user.uid), 
-        orderBy("requestedAt", "desc")
-      );
-      const unsubscribeHistory = onSnapshot(historyQuery, (snapshot) => {
-          setRedemptionHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const fetchHistory = async () => {
+        try {
+          const historyQuery = query(
+            collection(db, "redemptionRequests"),
+            where("userId", "==", user.uid)
+          );
+      
+          const querySnapshot = await getDocs(historyQuery);
+          const history = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          history.sort((a, b) => {
+              const timeA = a.requestedAt?.toDate?.()?.getTime() ?? 0;
+              const timeB = b.requestedAt?.toDate?.()?.getTime() ?? 0;
+              return timeB - timeA;
+          });
+          setRedemptionHistory(history);
+        } catch (err) {
+          console.error("Error fetching redemption history:", err);
+          // Optionally set an error state here for the user
+        } finally {
           setHistoryLoading(false);
-      });
+        }
+      };
+      
+      fetchHistory();
 
 
         return () => {
@@ -116,7 +131,6 @@ function Dashboard({ handleLogout }) {
             unsubscribeAnnouncements();
             unsubscribeWritingTasks();
             unsubscribeWritingResponses();
-            unsubscribeHistory();
           }
 
   }, [user, navigate]);

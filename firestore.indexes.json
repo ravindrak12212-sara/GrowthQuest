@@ -1,0 +1,18 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "redemptionRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "requestedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ]
+}

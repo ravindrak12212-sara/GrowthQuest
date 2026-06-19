@@ -43,7 +43,7 @@ function Redeem() {
                 const docSnap = await getDoc(userDocRef);
                 if (docSnap.exists()) {
                     const data = docSnap.data();
-                    const available = (data.pointsEarned || 0) - (data.processingPoints || 0);
+                    const available = data.pointsEarned || 0;
                     setAvailablePoints(available);
                 }
             } catch (error) {
@@ -97,7 +97,7 @@ function Redeem() {
                 }
 
                 const data = userDoc.data();
-                const serverAvailablePoints = (data.pointsEarned || 0) - (data.processingPoints || 0);
+                const serverAvailablePoints = data.pointsEarned || 0;
 
                 if (pointsToRedeem > serverAvailablePoints) {
                     throw new Error("You do not have enough available points. Your balance might have changed.");
