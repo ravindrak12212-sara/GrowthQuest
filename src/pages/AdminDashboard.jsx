@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
-import { signOut } from 'firebase/auth';
-import { collection, query, where, onSnapshot, doc, runTransaction, increment, serverTimestamp, setDoc, deleteDoc, orderBy, limit, addDoc, updateDoc, Timestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, runTransaction, increment, serverTimestamp, setDoc, deleteDoc, orderBy, limit, addDoc, updateDoc } from 'firebase/firestore';
 import PollManagement from '../components/admin/PollManagement';
 import WritingManagement from '../components/admin/WritingManagement';
 
-function AdminDashboard() {
+function AdminDashboard({ handleLogout }) {
   // --- STATE MANAGEMENT ---
   const navigate = useNavigate();
 
@@ -53,7 +52,7 @@ function AdminDashboard() {
   const [writingResponses, setWritingResponses] = useState([]);
 
   const formatLastSeen = (timestamp) => {
-    if (!timestamp) return 'N/A';
+    if (!timestamp || typeof timestamp.toDate !== 'function') return 'N/A';
     const lastSeenDate = timestamp.toDate();
     const now = new Date();
 
@@ -356,7 +355,6 @@ function AdminDashboard() {
   };
 
   // --- OTHER HANDLERS ---
-  const handleLogout = async () => { try { await signOut(auth); navigate('/'); } catch (error) { console.error("Error signing out: ", error); } };
   const handlePublishAnnouncement = async () => {
     if (!announcementTitle || !announcementMessage) { setError("Please fill in both the title and message for the announcement."); return; }
     setError(null); setMessage('');
@@ -545,7 +543,29 @@ function AdminDashboard() {
           </section>
           <section>
             <h2 style={sectionTitleStyle}>User Management</h2>
-            <div style={requestsContainerStyle}><div style={{overflowX: 'auto'}}><table style={tableStyle}><thead><tr><th style={thStyle}>Username</th><th style={thStyle}>Email</th><th style={thStyle}>Status</th><th style={thStyle}>UPI ID</th><th style={thStyle}>Points Earned</th><th style={thStyle}>Points Processing</th><th style={thStyle}>Points Redeemed</th></tr></thead><tbody>{users.map(user => (<tr key={user.id}><td style={tdStyle}>{user.username}</td><td style={tdStyle}>{user.email}</td><td style={tdStyle}>{user.online ? (<span>🟢 Online</span>) : (<span>🔴 Last seen: {formatLastSeen(user.lastSeen)}</span>)}</td><td style={tdStyle}>{user.upiId || 'N/A'}</td><td style={tdStyle}>{user.pointsEarned || 0}</td><td style={tdStyle}>{user.processingPoints || 0}</td><td style={tdStyle}>{user.redeemedPoints || 0}</td></tr>))}</tbody></table></div></div>
+            <div style={requestsContainerStyle}><div style={{overflowX: 'auto'}}><table style={tableStyle}><thead><tr><th style={thStyle}>Username</th><th style={thStyle}>Email</th><th style={thStyle}>Status</th><th style={thStyle}>UPI ID</th><th style={thStyle}>Points Earned</th><th style={thStyle}>Points Processing</th><th style={thStyle}>Points Redeemed</th></tr></thead><tbody>{users.map(user => {
+                const isOnline = user.lastSeen && typeof user.lastSeen.toDate === 'function' && (Date.now() - user.lastSeen.toDate().getTime() < 60000);
+                return (
+                    <tr key={user.id}>
+                        <td style={tdStyle}>{user.username}</td>
+                        <td style={tdStyle}>{user.email}</td>
+                        <td style={tdStyle}>
+                            {isOnline ? (
+                                <span>🟢 Online</span>
+                            ) : (
+                                <div>
+                                    <span>🔴 Offline</span>
+                                    <div style={{fontSize: '0.8em', color: '#666'}}>Last seen: {formatLastSeen(user.lastSeen)}</div>
+                                </div>
+                            )}
+                        </td>
+                        <td style={tdStyle}>{user.upiId || 'N/A'}</td>
+                        <td style={tdStyle}>{user.pointsEarned || 0}</td>
+                        <td style={tdStyle}>{user.processingPoints || 0}</td>
+                        <td style={tdStyle}>{user.redeemedPoints || 0}</td>
+                    </tr>
+                );
+            })}</tbody></table></div></div>
           </section>
         </>)}
       </main>

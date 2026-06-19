@@ -42,4 +42,38 @@ This document outlines the structure and plan for a new React application built 
 
 ## Current Plan
 
-The current request was to implement proper admin route protection. This has been completed by creating a specialized protected route component that verifies user roles against a Firestore collection, ensuring only authorized administrators can access the admin dashboard.
+Refactor the user presence system from a simple `online` boolean to a more reliable heartbeat-based system.
+
+**Requirements:**
+
+1.  Keep using the existing Firestore `users` collection.
+2.  Continue storing `lastSeen` using `serverTimestamp()`.
+3.  Remove all dependency on the `online` field for UI rendering.
+4.  After login:
+    *   immediately update `lastSeen`
+    *   start a heartbeat timer
+    *   every 30 seconds update `lastSeen: serverTimestamp()`
+5.  When logout occurs:
+    *   update `lastSeen`
+    *   stop the heartbeat timer
+6.  When browser/tab closes:
+    *   Use `beforeunload`, `pagehide`, and `visibilitychange` to send one final `lastSeen` update.
+7.  In `AdminDashboard.jsx`:
+    *   Do NOT read `user.online`.
+    *   Instead determine status using: `CurrentTime - lastSeen`
+    *   Rules:
+        *   `lastSeen` within last 60 seconds -> 🟢 Online
+        *   Otherwise -> 🔴 Offline
+    *   Display "Last seen: Today 10:42 PM", "Yesterday 8:20 PM", or "dd/mm/yyyy hh:mm AM/PM" using the existing formatting function.
+
+**Keep:**
+
+Do NOT modify:
+
+*   Polls
+*   Writing Challenges
+*   Wallet
+*   Redeem
+*   Authentication
+*   Admin UI
+*   Firestore structure (except for removing dependence on `online`).

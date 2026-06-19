@@ -39,7 +39,8 @@ function Login() {
                 redeemedPoints: 0,
                 processingPoints: 0,
                 role: "user",
-                createdAt: serverTimestamp()
+                createdAt: serverTimestamp(),
+                lastSeen: serverTimestamp() // Also set on creation
             });
         }
 
@@ -49,13 +50,15 @@ function Login() {
 
         const userDocRef = doc(db, 'users', user.uid);
         await updateDoc(userDocRef, {
-            online: true,
             lastSeen: serverTimestamp()
         });
 
-        if (user.email.toLowerCase() === 'ravindrak12212@gmail.com') {
+        const adminDocRef = doc(db, 'admins', user.uid);
+        const adminDoc = await getDoc(adminDocRef);
+
+        if (adminDoc.exists() && adminDoc.data().role === 'admin') {
             navigate('/admin');
-            return; 
+            return;
         }
       }
       navigate('/dashboard');
