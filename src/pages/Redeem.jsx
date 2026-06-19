@@ -6,15 +6,18 @@ import { useNavigate } from 'react-router-dom';
 function Redeem() {
   const navigate = useNavigate();
   const user = auth.currentUser;
-  const [pointsBalance, setPointsBalance] = useState(0);
+  const [userData, setUserData] = useState(null);
+  const [availablePoints, setAvailablePoints] = useState(0);
   const [requestedPoints, setRequestedPoints] = useState('');
   const [inrValue, setInrValue] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
+  const MINIMUM_TO_REDEEM = 1000;
+
   useEffect(() => {
-    const fetchUserPoints = async () => {
+    const fetchUserData = async () => {
       if (!user) {
         setLoading(false);
         return;
@@ -23,17 +26,20 @@ function Redeem() {
       try {
         const docSnap = await getDoc(userDocRef);
         if (docSnap.exists()) {
-          setPointsBalance(docSnap.data().pointsEarned || 0);
+          const data = docSnap.data();
+          setUserData(data);
+          const available = (data.pointsEarned || 0) - (data.processingPoints || 0);
+          setAvailablePoints(available);
         }
       } catch (error) {
-        console.error("Error fetching user points:", error);
+        console.error("Error fetching user data:", error);
         setMessage({ type: 'error', text: 'Could not fetch your points balance.' });
       } finally {
         setLoading(false);
       }
     };
 
-    fetchUserPoints();
+    fetchUserData();
   }, [user]);
 
   useEffect(() => {
@@ -48,6 +54,11 @@ function Redeem() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage({ type: '', text: '' });
+    
+    if (availablePoints < MINIMUM_TO_REDEEM) {
+      setMessage({ type: 'error', text: `Minimum ${MINIMUM_TO_REDEEM} points are required to submit a redeem request.` });
+      return;
+    }
 
     const pointsToRedeem = parseInt(requestedPoints, 10);
 
@@ -56,8 +67,8 @@ function Redeem() {
       return;
     }
 
-    if (pointsToRedeem > pointsBalance) {
-      setMessage({ type: 'error', text: 'You do not have enough points to make this redemption.' });
+    if (pointsToRedeem > availablePoints) {
+      setMessage({ type: 'error', text: 'You do not have enough available points to make this redemption.' });
       return;
     }
 
@@ -72,19 +83,23 @@ function Redeem() {
         if (!userDoc.exists()) {
           throw new Error("User data not found. Please try again.");
         }
+        
+        const data = userDoc.data();
+        const serverAvailablePoints = (data.pointsEarned || 0) - (data.processingPoints || 0);
+        
+        if (serverAvailablePoints < MINIMUM_TO_REDEEM) {
+          throw new Error(`A minimum of ${MINIMUM_TO_REDEEM} available points is required.`);
+        }
 
-        const currentPoints = userDoc.data().pointsEarned || 0;
-        if (pointsToRedeem > currentPoints) {
-          throw new Error("You do not have enough points to make this redemption.");
+        if (pointsToRedeem > serverAvailablePoints) {
+          throw new Error("You do not have enough available points. Your balance might have changed.");
         }
         
-        // Update user's points atomically
         transaction.update(userDocRef, {
           pointsEarned: increment(-pointsToRedeem),
           processingPoints: increment(pointsToRedeem)
         });
         
-        // Create the redemption request document
         transaction.set(redemptionRequestRef, {
           userId: user.uid,
           username: user.displayName || 'Anonymous',
@@ -94,9 +109,8 @@ function Redeem() {
         });
       });
 
-      // If the transaction is successful:
       setMessage({ type: 'success', text: 'Your redemption request is now being processed.' });
-      setPointsBalance(prevBalance => prevBalance - pointsToRedeem);
+      setAvailablePoints(prevBalance => prevBalance - pointsToRedeem);
       setRequestedPoints('');
       setInrValue(0);
 
@@ -107,6 +121,9 @@ function Redeem() {
       setIsSubmitting(false);
     }
   };
+
+  const canRedeem = availablePoints >= MINIMUM_TO_REDEEM;
+  const pointsNeeded = MINIMUM_TO_REDEEM - availablePoints;
   
   // Styles
   const pageStyle = {
@@ -201,6 +218,16 @@ function Redeem() {
     fontSize: '0.9rem'
   };
 
+  const lockedMessageStyle = {
+    padding: '1rem',
+    borderRadius: '8px',
+    marginTop: '1.5rem',
+    textAlign: 'center',
+    backgroundColor: '#fff4e6',
+    color: '#663c00',
+    border: '1px solid #ffeeba',
+  };
+
   if (loading) {
     return <div>Loading...</div>;
   }
@@ -212,7 +239,7 @@ function Redeem() {
         </button>
       <div style={headerStyle}>
         <h1 style={titleStyle}>Redeem Points</h1>
-        <p style={balanceStyle}>Your current balance: <strong>{pointsBalance} points</strong></p>
+        <p style={balanceStyle}>Your available balance: <strong>{availablePoints} points</strong></p>
       </div>
 
       <div style={formContainerStyle}>
@@ -225,8 +252,9 @@ function Redeem() {
               id="points"
               value={requestedPoints}
               onChange={(e) => setRequestedPoints(e.target.value)}
-              placeholder="e.g., 500"
+              placeholder="e.g., 1000"
               required
+              disabled={!canRedeem}
             />
           </div>
           <div style={inrValueStyle}>
@@ -239,12 +267,21 @@ function Redeem() {
 
           <button 
             type="submit" 
-            style={{...buttonStyle, opacity: isSubmitting ? 0.7 : 1}}
-            disabled={isSubmitting}
+            style={{...buttonStyle, opacity: isSubmitting || !canRedeem ? 0.7 : 1}}
+            disabled={isSubmitting || !canRedeem}
           >
             {isSubmitting ? 'Processing...' : 'Request Redemption'}
           </button>
         </form>
+        
+        {!canRedeem && !loading && (
+          <div style={lockedMessageStyle}>
+              <span style={{fontSize: '1.2rem', verticalAlign: 'middle'}}>🔒</span> Redeem unlocks at <strong>{MINIMUM_TO_REDEEM} points</strong>.
+              <br />
+              <span style={{marginTop: '0.5rem', display: 'block'}}>You need <strong>{pointsNeeded} more points</strong> to redeem.</span>
+          </div>
+        )}
+
         {message.text && (
             <div style={messageStyle(message.type)}>{message.text}</div>
         )}
