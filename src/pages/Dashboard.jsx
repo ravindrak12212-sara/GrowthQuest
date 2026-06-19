@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
-import { doc, onSnapshot, updateDoc, runTransaction, serverTimestamp, collection, query, where, addDoc, getDocs } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, runTransaction, serverTimestamp, collection, query, where, addDoc, getDocs, orderBy } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import ActivePolls from '../components/user/ActivePolls';
 import ActiveWritingChallenges from '../components/user/ActiveWritingChallenges';
@@ -34,7 +34,9 @@ function Dashboard({ handleLogout }) {
   const [writingLoading, setWritingLoading] = useState(false);
   const [writingError, setWritingError] = useState('');
   const [submittingTaskId, setSubmittingTaskId] = useState(null);
-  
+  const [redemptionHistory, setRedemptionHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+
   const MILESTONES = { 5: 50, 10: 100, 15: 150, 20: 200, 25: 250, 30: 300 };
 
   useEffect(() => {
@@ -98,12 +100,23 @@ function Dashboard({ handleLogout }) {
         );
       });
 
+      const historyQuery = query(
+        collection(db, "redemptionRequests"), 
+        where("userId", "==", user.uid), 
+        orderBy("requestedAt", "desc")
+      );
+      const unsubscribeHistory = onSnapshot(historyQuery, (snapshot) => {
+          setRedemptionHistory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+          setHistoryLoading(false);
+      });
+
 
         return () => {
             unsubscribe();
             unsubscribeAnnouncements();
             unsubscribeWritingTasks();
             unsubscribeWritingResponses();
+            unsubscribeHistory();
           }
 
   }, [user, navigate]);
@@ -541,6 +554,10 @@ function Dashboard({ handleLogout }) {
     boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
     marginBottom: '20px'
   };
+
+  const tableStyle = { width: '100%', borderCollapse: 'collapse', marginTop: '1.5rem' };
+  const thStyle = { border: '1px solid #ddd', padding: '12px', textAlign: 'left', backgroundColor: '#f2f2f2' };
+  const tdStyle = { border: '1px solid #ddd', padding: '12px' };
   
   const nextRewardInfo = getNextRewardInfo();
 
@@ -565,7 +582,7 @@ function Dashboard({ handleLogout }) {
                 <a style={menuItemStyle} onClick={() => { setAboutModalOpen(true); setDrawerOpen(false); }}>About Our Admin</a>
                 <a style={menuItemStyle} onClick={() => { setTermsModalOpen(true); setDrawerOpen(false); }}>Terms & Conditions</a>
                 <a style={menuItemStyle} onClick={() => { setChangePasswordModalOpen(true); setDrawerOpen(false); }}>Change Password</a>
-                <a style={menuItemStyle} onClick={() => { openUpiModal(); setDrawerOpen(false); }}>Redeem Method</a>
+                <a style={menuItemStyle} onClick={() => { openUpiModal(); setDrawerOpen(false); }}>Redeem Methods</a>
                  <a style={menuItemStyle} onClick={handleLogout}>Logout</a>
             </div>
         </div>
@@ -642,29 +659,100 @@ function Dashboard({ handleLogout }) {
 
         {isUpiModalOpen && (
             <div style={modalBackdropStyle} onClick={() => setUpiModalOpen(false)}>
-                <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
+                <div style={{...modalContentStyle, maxWidth: '800px'}} onClick={(e) => e.stopPropagation()}>
                     <button style={modalCloseButtonStyle} onClick={() => setUpiModalOpen(false)}>&times;</button>
-                    <h2 style={modalTitleStyle}>Redeem Method</h2>
-                    <input
-                      style={inputStyle}
-                      type="text"
-                      placeholder="Enter your UPI ID"
-                      value={upiId}
-                      onChange={(e) => setUpiId(e.target.value)}
-                    />
-                    {upiModalMessage && <p style={{color: isSavingUpi ? 'blue' : 'green', textAlign: 'center'}}>{upiModalMessage}</p>}
-                    <div style={{display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '2rem'}}>
-                        <button 
-                            style={{...actionButtonStyle, background: '#888', width: 'auto'}} 
-                            onClick={() => setUpiModalOpen(false)}>
-                            Cancel
-                        </button>
-                        <button 
-                            style={{...actionButtonStyle, background: 'linear-gradient(to right, #4a00e0, #8e2de2)', width: 'auto'}} 
-                            onClick={handleSaveUpi}
-                            disabled={isSavingUpi}>
-                            {isSavingUpi ? 'Saving...' : 'Save'}
-                        </button>
+                    
+                    <div style={{textAlign: 'center', padding: '2rem', borderRadius: '12px', background: 'linear-gradient(135deg, #6d28d9, #2563eb)', color: 'white', marginBottom: '2rem'}}>
+                        <h2 style={{...modalTitleStyle, color: 'white', fontSize: '2.5rem'}}>🎁 Reward Redemption Guide</h2>
+                        <p style={{...modalParagraphStyle, fontSize: '1.1rem', opacity: 0.9}}>Everything you need to know about redeeming your GrowthQuest rewards.</p>
+                    </div>
+
+                    <div style={{marginBottom: '2rem', padding: '2rem', borderRadius: '12px', background: '#f8f9fa'}}>
+                        <h3 style={{...modalTitleStyle, fontSize: '2rem', textAlign: 'left'}}>✨ What's New?</h3>
+                        <p style={modalParagraphStyle}>GrowthQuest now offers multiple digital reward options instead of direct UPI transfers. You can now redeem your rewards through:</p>
+                        <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem'}}>
+                            {[
+                                {icon: '🟨', name: 'Amazon Pay', desc: 'Instant balance transfer'},
+                                {icon: '🎁', name: 'Amazon Gift Card', desc: 'For your Amazon purchases'},
+                                {icon: '🛒', name: 'Flipkart', desc: 'Shop from a wide range'},
+                                {icon: '👕', name: 'AJIO', desc: 'Your fashion destination'},
+                                {icon: '📱', name: 'Mobile Recharge', desc: 'Top-up your mobile plan'}
+                            ].map(reward => (
+                                <div key={reward.name} style={{padding: '1.5rem', borderRadius: '12px', background: 'white', boxShadow: '0 4px 12px rgba(0,0,0,0.05)', textAlign: 'center'}}>
+                                    <div style={{fontSize: '2rem'}}>{reward.icon}</div>
+                                    <div style={{fontWeight: 'bold', marginTop: '0.5rem'}}>{reward.name}</div>
+                                    <div style={{fontSize: '0.9rem', color: '#6c757d', marginTop: '0.25rem'}}>{reward.desc}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div style={{marginBottom: '2rem', padding: '2rem', borderRadius: '12px', background: '#f8f9fa'}}>
+                        <h3 style={{...modalTitleStyle, fontSize: '2rem', textAlign: 'left'}}>🔄 Why We Upgraded</h3>
+                        <div style={{background: '#e9ecef', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem'}}>
+                            <p style={{...modalParagraphStyle, marginBottom: 0}}>Previously, rewards were sent through direct UPI transfers. While this served users well, manual payment processing could occasionally lead to delays. To provide a better experience, we've upgraded our system.</p>
+                        </div>
+                        <ul style={{listStyle: 'none', padding: 0}}>
+                            {[ 'Faster reward processing', 'Better reliability', 'Multiple reward choices', 'Easier request tracking', 'Improved security'].map(item => (
+                                <li key={item} style={{display: 'flex', alignItems: 'center', marginBottom: '0.75rem'}}>
+                                    <span style={{color: '#28a745', marginRight: '0.75rem', fontSize: '1.2rem'}}>✅</span>
+                                    {item}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+
+                    <div style={{marginBottom: '2rem', padding: '2rem', borderRadius: '12px', background: '#f8f9fa'}}>
+                        <h3 style={{...modalTitleStyle, fontSize: '2rem', textAlign: 'center'}}>🚀 How Redemption Works</h3>
+                        <div style={{maxWidth: '400px', margin: '0 auto', position: 'relative', padding: '2rem 0'}}>
+                           <div style={{position: 'absolute', left: '20px', top: '24px', bottom: '24px', width: '4px', backgroundColor: '#e9ecef', transform: 'translateX(-50%)'}}></div>
+                            {[ {num: '1', title: 'Earn Points', desc: 'From quizzes, polls, etc.'}, {num: '2', title: 'Choose Reward'}, {num: '3', title: 'Submit Request'}, {num: '4', title: 'Admin Review'}, {num: '5', title: 'Processing'}, {num: '6', title: 'Completed'}, {num: '7', title: 'Reward Delivered'}].map((step, index, arr) => (
+                                <div key={index} style={{display: 'flex', alignItems: 'flex-start', marginBottom: index === arr.length - 1 ? 0 : '24px', position: 'relative'}}>
+                                    <div style={{width: '40px', height: '40px', borderRadius: '50%', background: '#007bff', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', flexShrink: 0, zIndex: 1}}>{step.num}</div>
+                                    <div style={{marginLeft: '24px'}}>
+                                        <div style={{fontWeight: 'bold', fontSize: '1.1rem'}}>{step.title}</div>
+                                        {step.desc && <div style={{fontSize: '0.9rem', color: '#6c757d'}}>{step.desc}</div>}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+
+                    <div style={{marginBottom: '2rem', padding: '2rem', borderRadius: '12px', background: '#e0f7fa'}}>
+                        <h3 style={{...modalTitleStyle, fontSize: '2rem', textAlign: 'left', color: '#007bff'}}>📧 Gift Card & Mobile Recharge Delivery</h3>
+                        <div style={{display: 'flex', alignItems: 'center', marginBottom: '1rem'}}>
+                             <span style={{fontSize: '1.5rem', marginRight: '1rem'}}>📧</span>
+                            <p style={modalParagraphStyle}><strong>Email Delivery:</strong> Gift card vouchers are delivered directly to your <strong>registered email address</strong>.</p>
+                        </div>
+                        <div style={{display: 'flex', alignItems: 'center', marginBottom: '1rem'}}>
+                           <span style={{fontSize: '1.5rem', marginRight: '1rem'}}>📱</span>
+                            <p style={modalParagraphStyle}><strong>Mobile Recharge:</strong> Requests are processed to the <strong>mobile number</strong> provided during redemption.</p>
+                        </div>
+                        <div style={{padding: '1rem', background: '#fff9e6', borderRadius: '8px'}}>
+                            <p style={{...modalParagraphStyle, marginBottom: 0}}>⚠️ <strong>Important:</strong> Please ensure your details are accurate. Check your spam/junk folder for gift card emails.</p>
+                        </div>
+                    </div>
+
+                    <div style={{marginBottom: '2rem', padding: '2rem', borderRadius: '12px', background: '#f8f9fa'}}>
+                        <h3 style={{...modalTitleStyle, fontSize: '2rem', textAlign: 'left'}}>💰 Reward Conversion</h3>
+                        <p style={modalParagraphStyle}>GrowthQuest uses the following reward conversion: <strong>100 Points = ₹10</strong>.</p>
+                        <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                            <tbody>
+                                {[ {points: 250, inr: 25}, {points: 500, inr: 50}, {points: 1000, inr: 100}, {points: 2500, inr: 250}, {points: 5000, inr: 500}, {points: 10000, inr: 1000} ].map((item, index) => (
+                                    <tr key={index} style={{background: index % 2 === 0 ? '#e9ecef' : 'white'}}>
+                                        <td style={{padding: '1rem', fontWeight: 'bold'}}>{item.points} Points</td>
+                                        <td style={{padding: '1rem', textAlign: 'center', width: '20px'}}>→</td>
+                                        <td style={{padding: '1rem', fontWeight: 'bold'}}>₹{item.inr}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style={{textAlign: 'center', padding: '2rem', borderRadius: '12px', background: '#d4edda'}}>
+                        <h3 style={{...modalTitleStyle, fontSize: '2rem', color: '#155724'}}>❤️ Thank You</h3>
+                        <p style={{...modalParagraphStyle, fontWeight: 'bold'}}>Happy Learning • Happy Earning • Happy Growing! 🌱</p>
                     </div>
                 </div>
             </div>
@@ -855,6 +943,38 @@ function Dashboard({ handleLogout }) {
                         Redeem Points
                     </button>
                 </div>
+            </div>
+        </section>
+
+        <section style={{marginTop: '3rem'}}>
+            <h2 style={{ fontSize: '2rem', fontWeight: 'bold', textAlign: 'center', marginBottom: '2rem', color: '#4a00e0'}}>Redeem History</h2>
+            <div style={{overflowX: 'auto', backgroundColor: 'white', padding: '1rem', borderRadius: '12px'}}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Reward</th>
+                    <th style={thStyle}>Amount</th>
+                    <th style={thStyle}>Points Used</th>
+                    <th style={thStyle}>Status</th>
+                    <th style={thStyle}>Requested Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyLoading ? (
+                    <tr><td colSpan="5" style={{...tdStyle, textAlign: 'center'}}>Loading history...</td></tr>
+                  ) : redemptionHistory.length > 0 ? redemptionHistory.map(req => (
+                    <tr key={req.id}>
+                      <td style={tdStyle}>{req.rewardType}</td>
+                      <td style={tdStyle}>₹{req.rewardAmount}</td>
+                      <td style={tdStyle}>{req.pointsUsed}</td>
+                      <td style={tdStyle}>{req.status}</td>
+                      <td style={tdStyle}>{req.requestedAt?.toDate().toLocaleString()}</td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan="5" style={{...tdStyle, textAlign: 'center'}}>No redemption history.</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
         </section>
 
