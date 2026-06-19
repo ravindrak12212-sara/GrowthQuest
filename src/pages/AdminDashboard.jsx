@@ -5,6 +5,14 @@ import { collection, query, where, onSnapshot, doc, runTransaction, increment, s
 import PollManagement from '../components/admin/PollManagement';
 import WritingManagement from '../components/admin/WritingManagement';
 
+const REWARD_NAMES = {
+    amazon_pay: '🟨 Amazon Pay Gift Card',
+    amazon_gift: '🎁 Amazon Gift Card',
+    flipkart: '🛒 Flipkart Gift Card',
+    ajio: '👕 AJIO Gift Card',
+    mobile_recharge: '📱 Mobile Recharge',
+};
+
 function AdminDashboard({ handleLogout }) {
   // --- STATE MANAGEMENT ---
   const navigate = useNavigate();
@@ -34,11 +42,9 @@ function AdminDashboard({ handleLogout }) {
 
   // REDEEM WORKFLOW
   const [redemptionRequests, setRedemptionRequests] = useState([]);
-  const [approvedRequests, setApprovedRequests] = useState([]);
-  const [rejectedRequests, setRejectedRequests] = useState([]);
-  const [showApproved, setShowApproved] = useState(false);
-  const [showRejected, setShowRejected] = useState(false);
-  
+  const [historyRequests, setHistoryRequests] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+
   // POLL MANAGEMENT STATE
   const [newPoll, setNewPoll] = useState({ question: '', options: ['', ''], startTime: '', endTime: '' });
   const [editingPoll, setEditingPoll] = useState(null);
@@ -84,12 +90,13 @@ function AdminDashboard({ handleLogout }) {
     unsubscribes.push(onSnapshot(pollsQuery, (snapshot) => { setPolls(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setPollsLoading(false); }, (err) => { console.error("Poll listener error:", err); setError("Failed to fetch poll data."); setPollsLoading(false); }));
     const announcementRef = doc(db, 'announcements', 'current');
     unsubscribes.push(onSnapshot(announcementRef, (docSnap) => { setCurrentAnnouncement(docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null); setAnnouncementLoading(false); }, (err) => { console.error("Announcement listener error:", err); setAnnouncementLoading(false); }));
-    const pendingQuery = query(collection(db, "redemptionRequests"), where("status", "==", "pending"));
-    unsubscribes.push(onSnapshot(pendingQuery, (snapshot) => { setRedemptionRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setRequestsLoading(false); }, (err) => { console.error("Requests listener error:", err); setRequestsLoading(false); }));
-    const approvedQuery = query(collection(db, "redemptionRequests"), where("status", "==", "approved"), orderBy("approvedAt", "desc"), limit(20));
-    unsubscribes.push(onSnapshot(approvedQuery, (snapshot) => { setApprovedRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }));
-    const rejectedQuery = query(collection(db, "redemptionRequests"), where("status", "==", "rejected"), orderBy("rejectedAt", "desc"), limit(20));
-    unsubscribes.push(onSnapshot(rejectedQuery, (snapshot) => { setRejectedRequests(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }));
+    const requestsQuery = query(collection(db, "redemptionRequests"), orderBy("requestedAt", "desc"));
+    unsubscribes.push(onSnapshot(requestsQuery, (snapshot) => {
+        const allRequests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setRedemptionRequests(allRequests.filter(r => r.status === 'pending' || r.status === 'processing'));
+        setHistoryRequests(allRequests.filter(r => r.status === 'completed' || r.status === 'rejected'));
+        setRequestsLoading(false);
+    }, (err) => { console.error("Requests listener error:", err); setRequestsLoading(false); }));
     const writingTasksQuery = query(collection(db, "writingTasks"), orderBy("createdAt", "desc"));
     unsubscribes.push(onSnapshot(writingTasksQuery, (snapshot) => { setWritingTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setWritingTasksLoading(false); }, (err) => { console.error("Writing tasks listener error:", err); setWritingTasksLoading(false); }));
 
@@ -284,38 +291,57 @@ function AdminDashboard({ handleLogout }) {
 
   // --- REDEEM APPROVAL WORKFLOW ---
   const handleApprove = async (request) => {
-    const { id: requestId, userId, requestedPoints } = request;
+    const { id: requestId } = request;
     setMessage(''); setError(null);
     try {
-      await runTransaction(db, async (transaction) => {
-        const requestRef = doc(db, "redemptionRequests", requestId);
-        const userRef = doc(db, "users", userId);
-        const requestDoc = await transaction.get(requestRef);
-        if (!requestDoc.exists() || requestDoc.data().status !== 'pending') { throw new Error("Request is not pending or has already been processed."); }
-        const userDoc = await transaction.get(userRef);
-        if (!userDoc.exists()) { throw new Error("User associated with the request was not found."); }
-        transaction.update(requestRef, { status: "approved", approvedAt: serverTimestamp(), approvedBy: auth.currentUser.email });
-        transaction.update(userRef, { processingPoints: increment(-requestedPoints), redeemedPoints: increment(requestedPoints) });
+      const requestRef = doc(db, "redemptionRequests", requestId);
+      await updateDoc(requestRef, { 
+        status: "processing", 
+        approvedAt: serverTimestamp(), 
+        approvedBy: auth.currentUser.email 
       });
-      setMessage(`Request for ${requestedPoints} points approved.`);
+      setMessage(`Request approved and is now being processed.`);
     } catch (err) { console.error("Error approving request:", err); setError(`Failed to approve request: ${err.message}`); }
   };
 
-  const handleReject = async (request) => {
-    const { id: requestId, userId, requestedPoints } = request;
+  const handleComplete = async (request) => {
+    const { id: requestId, userId, pointsUsed } = request;
     setMessage(''); setError(null);
     try {
       await runTransaction(db, async (transaction) => {
         const requestRef = doc(db, "redemptionRequests", requestId);
         const userRef = doc(db, "users", userId);
         const requestDoc = await transaction.get(requestRef);
-        if (!requestDoc.exists() || requestDoc.data().status !== 'pending') { throw new Error("Request is not pending or has already been processed."); }
+        if (!requestDoc.exists() || requestDoc.data().status !== 'processing') { throw new Error("Request is not in processing state."); }
+        const userDoc = await transaction.get(userRef);
+        if (!userDoc.exists()) { throw new Error("User associated with the request was not found."); }
+        transaction.update(requestRef, { status: "completed", completedAt: serverTimestamp() });
+        transaction.update(userRef, { processingPoints: increment(-pointsUsed), redeemedPoints: increment(pointsUsed) });
+      });
+      setMessage(`Request for ${pointsUsed} points marked as complete.`);
+    } catch (err) { console.error("Error completing request:", err); setError(`Failed to complete request: ${err.message}`); }
+  };
+
+  const handleReject = async (request) => {
+    const { id: requestId, userId, pointsUsed, status } = request;
+    setMessage(''); setError(null);
+    try {
+      await runTransaction(db, async (transaction) => {
+        const requestRef = doc(db, "redemptionRequests", requestId);
+        const userRef = doc(db, "users", userId);
+        const requestDoc = await transaction.get(requestRef);
+        if (!requestDoc.exists() || (status !== 'pending' && status !== 'processing')) { throw new Error("Request cannot be rejected or has already been processed."); }
         const userDoc = await transaction.get(userRef);
         if (!userDoc.exists()) { throw new Error(`User ${userId} not found. Cannot process rejection.`); }
         transaction.update(requestRef, { status: "rejected", rejectedAt: serverTimestamp(), rejectedBy: auth.currentUser.email });
-        transaction.update(userRef, { processingPoints: increment(-requestedPoints), pointsEarned: increment(requestedPoints) });
+        // Return points to user
+        if (status === 'pending') {
+            transaction.update(userRef, { processingPoints: increment(-pointsUsed), pointsEarned: increment(pointsUsed) });
+        } else { // It was in processing
+            transaction.update(userRef, { processingPoints: increment(-pointsUsed), pointsEarned: increment(pointsUsed) });
+        }
       });
-       setMessage(`Request for ${requestedPoints} points rejected.`);
+       setMessage(`Request for ${pointsUsed} points rejected.`);
     } catch (err) { console.error("Error rejecting request:", err); setError(`Failed to reject request: ${err.message}`); }
   };
 
@@ -445,7 +471,76 @@ function AdminDashboard({ handleLogout }) {
   const tabContainerStyle = { borderBottom: '2px solid #ccc', marginBottom: '2rem' };
   const tabButtonStyle = { padding: '1rem 1.5rem', cursor: 'pointer', border: 'none', background: 'none', fontSize: '1.1rem', color: '#666', borderBottom: '3px solid transparent' };
   const tabButtonActiveStyle = { ...tabButtonStyle, fontWeight: 'bold', color: '#4a00e0', borderBottom: '3px solid #4a00e0' };
-  
+  const statusBadgeStyle = (status) => {
+    const baseStyle = { padding: '0.4rem 0.8rem', borderRadius: '12px', color: 'white', fontWeight: 'bold', fontSize: '0.8rem', display: 'inline-block' };
+    switch (status) {
+        case 'pending': return { ...baseStyle, backgroundColor: '#ffc107' }; // Yellow
+        case 'processing': return { ...baseStyle, backgroundColor: '#17a2b8' }; // Blue
+        case 'completed': return { ...baseStyle, backgroundColor: '#28a745' }; // Green
+        case 'rejected': return { ...baseStyle, backgroundColor: '#dc3545' }; // Red
+        default: return { ...baseStyle, backgroundColor: '#6c757d' }; // Grey
+    }
+  };
+
+  const renderRedeemTable = (requests, title) => (
+    <div style={{overflowX: 'auto'}}>
+      <h3 style={{fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem'}}>{title}</h3>
+      <table style={tableStyle}>
+        <thead>
+          <tr>
+            <th style={thStyle}>User</th>
+            <th style={thStyle}>Reward</th>
+            <th style={thStyle}>Reward Value</th>
+            <th style={thStyle}>Points Used</th>
+            <th style={thStyle}>Details</th>
+            <th style={thStyle}>Status</th>
+            <th style={thStyle}>Requested Date</th>
+            <th style={thStyle}>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {requests.length > 0 ? requests.map(req => (
+            <tr key={req.id}>
+              <td style={tdStyle}>{req.username}</td>
+              <td style={tdStyle}>{REWARD_NAMES[req.rewardType] || req.rewardType}</td>
+              <td style={tdStyle}>₹{req.rewardAmount}</td>
+              <td style={tdStyle}>{req.pointsUsed}</td>
+              <td style={tdStyle}>
+                {req.rewardType === 'mobile_recharge' ? (
+                    <>
+                        <div><strong>Provider:</strong> {req.serviceProvider}</div>
+                        <div><strong>Mobile:</strong> {req.mobileNumber}</div>
+                        {req.planValidity && <div><strong>Validity:</strong> {req.planValidity}</div>}
+                    </>
+                ) : (
+                    <span>*</span>
+                )}
+              </td>
+              <td style={tdStyle}><span style={statusBadgeStyle(req.status)}>{req.status.charAt(0).toUpperCase() + req.status.slice(1)}</span></td>
+              <td style={tdStyle}>{req.requestedAt?.toDate().toLocaleString()}</td>
+              <td style={tdStyle}>
+                {req.status === 'pending' && (
+                    <>
+                        <button style={{...buttonStyle, background: '#007bff'}} onClick={() => handleApprove(req)}>Approve</button>
+                        <button style={{...buttonStyle, background: '#dc3545'}} onClick={() => handleReject(req)}>Reject</button>
+                    </>
+                )}
+                {req.status === 'processing' && (
+                    <button style={{...buttonStyle, background: '#28a745'}} onClick={() => handleComplete(req)}>Complete</button>
+                )}
+                {(req.status === 'completed' || req.status === 'rejected') && (
+                    <span>-</span>
+                )}
+              </td>
+            </tr>
+          )) : (
+            <tr><td colSpan="8" style={{...tdStyle, textAlign: 'center'}}>No requests found.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+
   return (
     <div style={pageStyle}>
       <nav style={navStyle}><div style={navTitleStyle}>GrowthQuest Admin</div><button style={logoutButtonStyle} onClick={handleLogout}>Logout</button></nav>
@@ -531,13 +626,12 @@ function AdminDashboard({ handleLogout }) {
           <section>
             <h2 style={sectionTitleStyle}>Redeem Requests</h2>
             <div style={requestsContainerStyle}>
-                <h3 style={{fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem'}}>Pending Requests</h3>
-                <div style={{overflowX: 'auto'}}><table style={tableStyle}><thead><tr><th style={thStyle}>Username</th><th style={thStyle}>User ID</th><th style={thStyle}>UPI ID</th><th style={thStyle}>Points</th><th style={thStyle}>Requested At</th><th style={thStyle}>Status</th><th style={thStyle}>Actions</th></tr></thead><tbody>{redemptionRequests.length > 0 ? redemptionRequests.map(req => (<tr key={req.id}><td style={tdStyle}>{req.username}</td><td style={tdStyle}>{req.userId}</td><td style={tdStyle}>{users.find(user => user.id === req.userId)?.upiId || 'N/A'}</td><td style={tdStyle}>{req.requestedPoints}</td><td style={tdStyle}>{req.timestamp?.toDate().toLocaleString()}</td><td style={tdStyle}>{req.status}</td><td style={tdStyle}><button style={{...buttonStyle, background: '#28a745'}} onClick={() => handleApprove(req)}>Approve</button><button style={{...buttonStyle, background: '#dc3545'}} onClick={() => handleReject(req)}>Reject</button></td></tr>)) : (<tr><td colSpan="7" style={{...tdStyle, textAlign: 'center'}}>No pending requests.</td></tr>)}</tbody></table></div>
-                <div style={{marginTop: '2rem', borderTop: '1px solid #eee', paddingTop: '2rem'}}>
-                    <h3 style={{fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1rem'}}>History</h3>
-                    <div><button style={{...buttonStyle, background: showApproved ? '#4a00e0' : '#6c757d'}} onClick={() => {setShowApproved(true); setShowRejected(false);}}>Approved</button><button style={{...buttonStyle, background: showRejected ? '#4a00e0' : '#6c757d'}} onClick={() => {setShowRejected(true); setShowApproved(false);}}>Rejected</button></div>
-                    {showApproved && (<div style={{marginTop: '1rem'}}><h4 style={{fontSize: '1.2rem', fontWeight: 'bold', marginBottom: '1rem'}}>Recently Approved</h4><div style={{overflowX: 'auto'}}><table style={tableStyle}><thead><tr><th style={thStyle}>Username</th><th style={thStyle}>Points</th><th style={thStyle}>Requested At</th><th style={thStyle}>Approved By</th></tr></thead><tbody>{approvedRequests.length > 0 ? approvedRequests.map(req => (<tr key={req.id}><td style={tdStyle}>{req.username}</td><td style={tdStyle}>{req.requestedPoints}</td><td style={tdStyle}>{req.timestamp?.toDate().toLocaleString()}</td><td style={tdStyle}>{req.approvedBy}</td></tr>)) : (<tr><td colSpan="4" style={{...tdStyle, textAlign: 'center'}}>No approved requests in history.</td></tr>)}</tbody></table></div></div>)}
-                    {showRejected && (<div style={{marginTop: '1rem'}}><h4 style={{fontSize: '1.2rem', fontWeight: 'bold', marginBottom: '1rem'}}>Recently Rejected</h4><div style={{overflowX: 'auto'}}><table style={tableStyle}><thead><tr><th style={thStyle}>Username</th><th style={thStyle}>Points</th><th style={thStyle}>Requested At</th><th style={thStyle}>Rejected By</th></tr></thead><tbody>{rejectedRequests.length > 0 ? rejectedRequests.map(req => (<tr key={req.id}><td style={tdStyle}>{req.username}</td><td style={tdStyle}>{req.requestedPoints}</td><td style={tdStyle}>{req.timestamp?.toDate().toLocaleString()}</td><td style={tdStyle}>{req.rejectedBy}</td></tr>)) : (<tr><td colSpan="4" style={{...tdStyle, textAlign: 'center'}}>No rejected requests in history.</td></tr>)}</tbody></table></div></div>)}
+                {renderRedeemTable(redemptionRequests, 'Active Requests')}
+                <div style={{marginTop: '2rem', borderTop: '1px solid #eee', paddingTop: '1rem'}}>
+                    <button style={{...buttonStyle, background: showHistory ? '#4a00e0' : '#6c757d'}} onClick={() => setShowHistory(!showHistory)}>
+                        {showHistory ? 'Hide History' : 'Show History'}
+                    </button>
+                    {showHistory && renderRedeemTable(historyRequests, 'Request History')}
                 </div>
             </div>
           </section>
