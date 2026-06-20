@@ -38,6 +38,12 @@ function Dashboard({ handleLogout }) {
   const [historyLoading, setHistoryLoading] = useState(true);
 
   const MILESTONES = { 5: 50, 10: 100, 15: 150, 20: 200, 25: 250, 30: 300 };
+  const TREASURE_KEY_TARGETS = {
+    bronze: 5,
+    silver: 15,
+    gold: 30,
+    diamond: 50,
+  };
 
   useEffect(() => {
     if (!user) {
@@ -264,6 +270,10 @@ function Dashboard({ handleLogout }) {
   const handleQuizNavigation = () => {
       navigate('/quiz');
   }
+
+  const handleTreasureVaultNavigation = () => {
+    navigate('/treasure-vault');
+  };
 
   const calculateTotalMoney = (data) => {
     if (!data) return '0.00';
@@ -574,6 +584,8 @@ function Dashboard({ handleLogout }) {
   const tdStyle = { border: '1px solid #ddd', padding: '12px' };
   
   const nextRewardInfo = getNextRewardInfo();
+
+  const treasureKeys = userData?.treasureKeys || { bronze: 0, silver: 0, gold: 0, diamond: 0 };
 
   if (loading) {
     return <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh'}}>Loading...</div>;
@@ -889,6 +901,37 @@ function Dashboard({ handleLogout }) {
               <div style={cardTitleStyle}>Processing Points</div>
             </div>
           </div>
+        </section>
+
+        <section style={{marginTop: '3rem', cursor: 'pointer'}} onClick={handleTreasureVaultNavigation}>
+            <h2 style={{ fontSize: '2rem', fontWeight: 'bold', textAlign: 'center', marginBottom: '2rem', color: '#4a00e0'}}>Treasure Vault</h2>
+            <div style={statsContainerStyle}>
+                {Object.keys(TREASURE_KEY_TARGETS).map(keyType => {
+                    const current = treasureKeys[keyType] || 0;
+                    const target = TREASURE_KEY_TARGETS[keyType];
+                    const progress = Math.min(100, (current / target) * 100);
+                    const keyInfo = {
+                        bronze: { icon: '🥉', name: 'Bronze', gradient: 'linear-gradient(to right, #cd7f32, #a05a2c)' },
+                        silver: { icon: '🥈', name: 'Silver', gradient: 'linear-gradient(to right, #c0c0c0, #a9a9a9)' },
+                        gold: { icon: '🥇', name: 'Gold', gradient: 'linear-gradient(to right, #ffd700, #daa520)' },
+                        diamond: { icon: '💎', name: 'Diamond', gradient: 'linear-gradient(to right, #b9f2ff, #8ec5fc)' },
+                    };
+
+                    return (
+                        <div key={keyType} style={{...statCardStyle, background: keyInfo[keyType].gradient}}>
+                             <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
+                                <div>
+                                    <div style={{fontSize: '1.5rem', fontWeight: 'bold'}}>{keyInfo[keyType].icon} {keyInfo[keyType].name}</div>
+                                </div>
+                                <div style={{fontSize: '1.5rem', fontWeight: 'bold'}}>{current} / {target}</div>
+                            </div>
+                            <div style={{height: '12px', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: '6px', overflow: 'hidden'}}>
+                                <div style={{width: `${progress}%`, height: '100%', background: 'white', borderRadius: '6px', transition: 'width 0.5s ease-in-out'}}></div>
+                            </div>
+                        </div>
+                    )
+                })}
+            </div>
         </section>
 
         <section style={{marginTop: '3rem'}}>

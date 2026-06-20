@@ -27,7 +27,7 @@ This document outlines the structure and plan for a new React application built 
         *   `/admin` -> Admin Dashboard (protected)
 *   **Authentication & Authorization:**
     *   **Protected Routes:** General routes like `/dashboard` are protected, requiring user authentication.
-    *   **Admin Route Protection:** 
+    *   **Admin Route Protection:**
         *   Implemented `AdminProtectedRoute.jsx` to secure the `/admin` route.
         *   Access is controlled via a Firestore `admins` collection, where each document ID is a user's UID and contains `role: "admin"`.
         *   Unauthenticated users are redirected to `/`.
@@ -38,42 +38,40 @@ This document outlines the structure and plan for a new React application built 
         *   Publishes to Firestore collection `announcements`.
     *   **User Dashboard:**
         *   Displays a visually appealing announcement banner fetched in real-time from Firestore.
-        *   The UI has been refined to match the application's design system, featuring a gradient background, accent border, and improved layout.
+*   **User Presence System:**
+    *   Refactored from a simple `online` boolean to a more reliable heartbeat-based system.
+    *   `lastSeen` is updated every 30 seconds.
+    *   Online status in the admin dashboard is now calculated based on the `lastSeen` timestamp.
+*   **Sprint 1: Treasure Keys Foundation**
+    *   Added `treasureKeys` field to the user object in Firestore.
+    *   Dashboard displays the number of treasure keys.
+    *   Admin dashboard has a panel to add/reset treasure keys for a user.
+*   **Sprint 1.2: Refactor Treasure Keys**
+    *   Replaced the single Treasure Keys system with four independent key systems (Bronze, Silver, Gold, Diamond).
+    *   Updated the Dashboard and Admin Dashboard to reflect the new data model.
+*   **Sprint 2.1: Treasure Vault UI**
+    *   Implemented the Treasure Vault UI with navigation from the dashboard.
 
 ## Current Plan
 
-Refactor the user presence system from a simple `online` boolean to a more reliable heartbeat-based system.
+### Sprint 2.2: Treasure Vault UI Polish
+
+**Objective:** Improve the Treasure Vault UI.
 
 **Requirements:**
 
-1.  Keep using the existing Firestore `users` collection.
-2.  Continue storing `lastSeen` using `serverTimestamp()`.
-3.  Remove all dependency on the `online` field for UI rendering.
-4.  After login:
-    *   immediately update `lastSeen`
-    *   start a heartbeat timer
-    *   every 30 seconds update `lastSeen: serverTimestamp()`
-5.  When logout occurs:
-    *   update `lastSeen`
-    *   stop the heartbeat timer
-6.  When browser/tab closes:
-    *   Use `beforeunload`, `pagehide`, and `visibilitychange` to send one final `lastSeen` update.
-7.  In `AdminDashboard.jsx`:
-    *   Do NOT read `user.online`.
-    *   Instead determine status using: `CurrentTime - lastSeen`
-    *   Rules:
-        *   `lastSeen` within last 60 seconds -> 🟢 Online
-        *   Otherwise -> 🔴 Offline
-    *   Display "Last seen: Today 10:42 PM", "Yesterday 8:20 PM", or "dd/mm/yyyy hh:mm AM/PM" using the existing formatting function.
+1.  **Back Button:**
+    *   Add a "← Back to Dashboard" button.
 
-**Keep:**
+2.  **Vault Cards:**
+    *   Add hover effects (slight scale, enhanced shadow).
+    *   Improve the locked status message to show how many more keys are needed.
+    *   Add descriptive text to each vault card.
 
-Do NOT modify:
+3.  **Header:**
+    *   Enhance the header with a "Your Treasure Journey" section.
 
-*   Polls
-*   Writing Challenges
-*   Wallet
-*   Redeem
-*   Authentication
-*   Admin UI
-*   Firestore structure (except for removing dependence on `online`).
+4.  **Progress Section:**
+    *   Improve the progress display with a title and more descriptive text.
+
+5.  **Adherence to existing theme and responsive design.**

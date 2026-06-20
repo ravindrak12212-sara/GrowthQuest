@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import Quiz from './pages/Quiz';
 import Redeem from './pages/Redeem';
 import AdminDashboard from './pages/AdminDashboard';
+import TreasureVault from './pages/TreasureVault';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminProtectedRoute from './components/AdminProtectedRoute';
 import { auth, db } from './firebase/firebase';
@@ -45,6 +46,7 @@ function App() {
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard handleLogout={handleLogout} /></ProtectedRoute>} />
             <Route path="/quiz" element={<ProtectedRoute><Quiz /></ProtectedRoute>} />
             <Route path="/redeem" element={<ProtectedRoute><Redeem /></ProtectedRoute>} />
+            <Route path="/treasure-vault" element={<ProtectedRoute><TreasureVault /></ProtectedRoute>} />
             <Route path="/admin" element={<AdminProtectedRoute><AdminDashboard handleLogout={handleLogout} /></AdminProtectedRoute>} />
         </Routes>
     );

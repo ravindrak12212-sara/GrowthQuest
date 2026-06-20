@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
-import { collection, query, where, onSnapshot, doc, runTransaction, increment, serverTimestamp, setDoc, deleteDoc, orderBy, limit, addDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, runTransaction, increment, serverTimestamp, setDoc, deleteDoc, orderBy, limit, addDoc, updateDoc, getDocs } from 'firebase/firestore';
 import PollManagement from '../components/admin/PollManagement';
 import WritingManagement from '../components/admin/WritingManagement';
 
@@ -56,6 +56,9 @@ function AdminDashboard({ handleLogout }) {
   const [writingTasks, setWritingTasks] = useState([]);
   const [newWritingTask, setNewWritingTask] = useState({ title: '', question: '', rewardPoints: 50, minimumWords: 100 });
   const [writingResponses, setWritingResponses] = useState([]);
+  
+  const [treasureKeyUserEmail, setTreasureKeyUserEmail] = useState('');
+  const [treasureKeyMessage, setTreasureKeyMessage] = useState('');
 
   const formatLastSeen = (timestamp) => {
     if (!timestamp || typeof timestamp.toDate !== 'function') return 'N/A';
@@ -380,6 +383,78 @@ function AdminDashboard({ handleLogout }) {
     try { await deleteDoc(doc(db, 'writingTasks', taskId)); setMessage('Challenge deleted successfully!'); } catch (err) { console.error("Error deleting task:", err); setError("Failed to delete challenge."); }
   };
 
+    const handleGrantKeys = async (keyType) => {
+        if (!treasureKeyUserEmail) {
+            setTreasureKeyMessage('Please enter a user email.');
+            return;
+        }
+        setTreasureKeyMessage('Processing...');
+        try {
+            const usersQuery = query(collection(db, "users"), where("email", "==", treasureKeyUserEmail));
+            const querySnapshot = await getDocs(usersQuery);
+            if (querySnapshot.empty) {
+                setTreasureKeyMessage('User not found.');
+                return;
+            }
+            const userDoc = querySnapshot.docs[0];
+            const userRef = doc(db, 'users', userDoc.id);
+    
+            await runTransaction(db, async (transaction) => {
+                const userSnap = await transaction.get(userRef)
+                if (!userSnap.exists()) {
+                  throw "Document does not exist!";
+                }
+                const treasureKeys = userSnap.data().treasureKeys || { bronze: 0, silver: 0, gold: 0, diamond: 0 };
+                treasureKeys[keyType] = (treasureKeys[keyType] || 0) + 1;
+                transaction.update(userRef, {
+                    treasureKeys: treasureKeys
+                });
+            });
+    
+            setTreasureKeyMessage(`+1 ${keyType} key granted to ${treasureKeyUserEmail}.`);
+        } catch (error) {
+            console.error("Error granting keys:", error);
+            setTreasureKeyMessage('Error granting keys.');
+        }
+    };
+
+    const handleResetKeys = async (keyType) => {
+        if (!treasureKeyUserEmail) {
+            setTreasureKeyMessage('Please enter a user email.');
+            return;
+        }
+        setTreasureKeyMessage('Processing...');
+        try {
+            const usersQuery = query(collection(db, "users"), where("email", "==", treasureKeyUserEmail));
+            const querySnapshot = await getDocs(usersQuery);
+    
+            if (querySnapshot.empty) {
+                setTreasureKeyMessage('User not found.');
+                return;
+            }
+    
+            const userDoc = querySnapshot.docs[0];
+            const userRef = doc(db, 'users', userDoc.id);
+    
+            await runTransaction(db, async (transaction) => {
+                const userSnap = await transaction.get(userRef);
+                if (!userSnap.exists()) {
+                    throw "Document does not exist!";
+                }
+                const treasureKeys = userSnap.data().treasureKeys || { bronze: 0, silver: 0, gold: 0, diamond: 0 };
+                treasureKeys[keyType] = 0;
+                transaction.update(userRef, {
+                    treasureKeys: treasureKeys
+                });
+            });
+    
+            setTreasureKeyMessage(`${keyType} keys reset for ${treasureKeyUserEmail}.`);
+        } catch (error) {
+            console.error("Error resetting keys:", error);
+            setTreasureKeyMessage('Error resetting keys.');
+        }
+    };
+
   // --- OTHER HANDLERS ---
   const handlePublishAnnouncement = async () => {
     if (!announcementTitle || !announcementMessage) { setError("Please fill in both the title and message for the announcement."); return; }
@@ -636,9 +711,28 @@ function AdminDashboard({ handleLogout }) {
             </div>
           </section>
           <section>
+            <h2 style={sectionTitleStyle}>Treasure Key Management</h2>
+            <div style={announcementFormStyle}>
+                <input type="email" style={inputStyle} placeholder="User Email" value={treasureKeyUserEmail} onChange={(e) => setTreasureKeyUserEmail(e.target.value)} />
+                 {treasureKeyMessage && <p style={{ color: 'green', marginBottom: '1rem' }}>{treasureKeyMessage}</p>}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                    {['bronze', 'silver', 'gold', 'diamond'].map(keyType => (
+                        <div key={keyType} style={{ border: '1px solid #ccc', borderRadius: '8px', padding: '1rem' }}>
+                            <h3 style={{ textTransform: 'capitalize', marginBottom: '1rem' }}>{keyType} Keys</h3>
+                            <div style={{ display: 'flex', gap: '0.5rem'}}>
+                                <button style={{ ...buttonStyle, background: '#007bff', flexGrow: 1 }} onClick={() => handleGrantKeys(keyType)}>+1</button>
+                                <button style={{ ...buttonStyle, background: '#dc3545', flexGrow: 1 }} onClick={() => handleResetKeys(keyType)}>Reset</button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </section>
+          <section>
             <h2 style={sectionTitleStyle}>User Management</h2>
-            <div style={requestsContainerStyle}><div style={{overflowX: 'auto'}}><table style={tableStyle}><thead><tr><th style={thStyle}>Username</th><th style={thStyle}>Email</th><th style={thStyle}>Status</th><th style={thStyle}>UPI ID</th><th style={thStyle}>Points Earned</th><th style={thStyle}>Points Processing</th><th style={thStyle}>Points Redeemed</th></tr></thead><tbody>{users.map(user => {
+            <div style={requestsContainerStyle}><div style={{overflowX: 'auto'}}><table style={tableStyle}><thead><tr><th style={thStyle}>Username</th><th style={thStyle}>Email</th><th style={thStyle}>Status</th><th style={thStyle}>UPI ID</th><th style={thStyle}>Points Earned</th><th style={thStyle}>Points Processing</th><th style={thStyle}>Points Redeemed</th><th style={thStyle}>🥉</th><th style={thStyle}>🥈</th><th style={thStyle}>🥇</th><th style={thStyle}>💎</th></tr></thead><tbody>{users.map(user => {
                 const isOnline = user.lastSeen && typeof user.lastSeen.toDate === 'function' && (Date.now() - user.lastSeen.toDate().getTime() < 60000);
+                const treasureKeys = user.treasureKeys || { bronze: 0, silver: 0, gold: 0, diamond: 0 };
                 return (
                     <tr key={user.id}>
                         <td style={tdStyle}>{user.username}</td>
@@ -657,6 +751,10 @@ function AdminDashboard({ handleLogout }) {
                         <td style={tdStyle}>{user.pointsEarned || 0}</td>
                         <td style={tdStyle}>{user.processingPoints || 0}</td>
                         <td style={tdStyle}>{user.redeemedPoints || 0}</td>
+                         <td style={tdStyle}>{treasureKeys.bronze}</td>
+                         <td style={tdStyle}>{treasureKeys.silver}</td>
+                         <td style={tdStyle}>{treasureKeys.gold}</td>
+                         <td style={tdStyle}>{treasureKeys.diamond}</td>
                     </tr>
                 );
             })}</tbody></table></div></div>
