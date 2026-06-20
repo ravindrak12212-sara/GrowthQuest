@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth, db } from '../firebase/firebase';
-import { doc, onSnapshot, runTransaction, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase/firebase';
+import { doc, onSnapshot, runTransaction, collection, serverTimestamp } from 'firebase/firestore';
 
-function TreasureVault() {
+function TreasureVault({ user }) {
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [hovered, setHovered] = useState(null);
   const [isConfirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [isSuccessDialogOpen, setSuccessDialogOpen] = useState(false);
+  const [unlockedTreasureId, setUnlockedTreasureId] = useState(null);
   const [error, setError] = useState('');
   const navigate = useNavigate();
-  const user = auth.currentUser;
 
   useEffect(() => {
     if (!user) {
@@ -39,6 +39,8 @@ function TreasureVault() {
 
     const userDocRef = doc(db, 'users', user.uid);
     const unlocksCollectionRef = collection(db, 'treasureUnlocks');
+    const newUnlockRef = doc(unlocksCollectionRef);
+    const newUnlockId = newUnlockRef.id;
 
     try {
       await runTransaction(db, async (transaction) => {
@@ -58,7 +60,7 @@ function TreasureVault() {
         });
 
         // Create unlock record
-        transaction.set(doc(unlocksCollectionRef), {
+        transaction.set(newUnlockRef, {
             userId: user.uid,
             vaultType: "bronze",
             status: "RESERVED",
@@ -69,6 +71,7 @@ function TreasureVault() {
         });
       });
 
+      setUnlockedTreasureId(newUnlockId);
       setSuccessDialogOpen(true);
 
     } catch (err) {
@@ -78,6 +81,13 @@ function TreasureVault() {
           console.error("Transaction failed: ", err);
           setError("Unlock Failed. Please try again later.");
       }
+    }
+  };
+
+  const handleSuccessDialogClose = () => {
+    setSuccessDialogOpen(false);
+    if (unlockedTreasureId) {
+        navigate(`/delivery-profile?unlockId=${unlockedTreasureId}`);
     }
   };
 
@@ -361,18 +371,18 @@ function TreasureVault() {
         )}
 
         {isSuccessDialogOpen && (
-            <div style={modalBackdropStyle} onClick={() => setSuccessDialogOpen(false)}>
+            <div style={modalBackdropStyle} onClick={handleSuccessDialogClose}>
                 <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
                     <h2 style={modalTitleStyle}>🎉 Congratulations!</h2>
                     <p style={modalParagraphStyle}>Your Bronze Treasure Vault has been unlocked successfully.</p>
                     <p style={modalParagraphStyle}>Your Mystery Gift has been reserved.</p>
-                    <p style={{...modalParagraphStyle, color: '#555'}}>Gift details will remain a surprise until delivery.</p>
+                    <p style={{...modalParagraphStyle, color: '#555'}}>Click below to enter your delivery details.</p>
                     
                     <div style={{display: 'flex', justifyContent: 'center', marginTop: '2rem'}}>
                         <button 
                             style={{...modalButtonStyle, background: 'linear-gradient(to right, #4a00e0, #8e2de2)', color: 'white'}}
-                            onClick={() => setSuccessDialogOpen(false)}>
-                            Awesome!
+                            onClick={handleSuccessDialogClose}>
+                            Enter Delivery Details
                         </button>
                     </div>
                 </div>

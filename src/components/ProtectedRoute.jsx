@@ -1,22 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Navigate } from 'react-router-dom';
-import { auth } from '../firebase/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
 
-function ProtectedRoute({ children }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  if (loading) {
+function ProtectedRoute({ user, children }) {
+  if (user === undefined) {
     return <div>Loading...</div>;
   }
 
@@ -24,7 +10,7 @@ function ProtectedRoute({ children }) {
     return <Navigate to="/" />;
   }
 
-  return children;
+  return React.cloneElement(children, { user });
 }
 
 export default ProtectedRoute;

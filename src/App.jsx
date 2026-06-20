@@ -6,6 +6,7 @@ import Quiz from './pages/Quiz';
 import Redeem from './pages/Redeem';
 import AdminDashboard from './pages/AdminDashboard';
 import TreasureVault from './pages/TreasureVault';
+import DeliveryProfile from './pages/DeliveryProfile';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminProtectedRoute from './components/AdminProtectedRoute';
 import { auth, db } from './firebase/firebase';
@@ -14,7 +15,7 @@ import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import useHeartbeat from './hooks/useHeartbeat';
 
 function App() {
-    const [user, setUser] = useState(null);
+    const [user, setUser] = useState(undefined);
     const navigate = useNavigate();
     useHeartbeat(user?.uid);
 
@@ -43,21 +44,20 @@ function App() {
     return (
         <Routes>
             <Route path="/" element={<Login />} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard handleLogout={handleLogout} /></ProtectedRoute>} />
-            <Route path="/quiz" element={<ProtectedRoute><Quiz /></ProtectedRoute>} />
-            <Route path="/redeem" element={<ProtectedRoute><Redeem /></ProtectedRoute>} />
-            <Route path="/treasure-vault" element={<ProtectedRoute><TreasureVault /></ProtectedRoute>} />
-            <Route path="/admin" element={<AdminProtectedRoute><AdminDashboard handleLogout={handleLogout} /></AdminProtectedRoute>} />
+            <Route path="/dashboard" element={<ProtectedRoute user={user}><Dashboard handleLogout={handleLogout} /></ProtectedRoute>} />
+            <Route path="/quiz" element={<ProtectedRoute user={user}><Quiz /></ProtectedRoute>} />
+            <Route path="/redeem" element={<ProtectedRoute user={user}><Redeem /></ProtectedRoute>} />
+            <Route path="/treasure-vault" element={<ProtectedRoute user={user}><TreasureVault /></ProtectedRoute>} />
+            <Route path="/delivery-profile" element={<ProtectedRoute user={user}><DeliveryProfile /></ProtectedRoute>} />
+            <Route path="/admin" element={<AdminProtectedRoute user={user}><AdminDashboard handleLogout={handleLogout} /></AdminProtectedRoute>} />
         </Routes>
     );
 }
 
-function Root() {
-    return (
-        <BrowserRouter>
-            <App />
-        </BrowserRouter>
-    );
-}
+const AppWrapper = () => (
+    <BrowserRouter>
+        <App />
+    </BrowserRouter>
+);
 
-export default Root;
+export default AppWrapper;
