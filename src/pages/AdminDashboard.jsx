@@ -4,6 +4,7 @@ import { auth, db } from '../firebase/firebase';
 import { collection, query, where, onSnapshot, doc, runTransaction, increment, serverTimestamp, setDoc, deleteDoc, orderBy, limit, addDoc, updateDoc, getDocs } from 'firebase/firestore';
 import PollManagement from '../components/admin/PollManagement';
 import WritingManagement from '../components/admin/WritingManagement';
+import GiftManagement from '../components/admin/GiftManagement';
 
 const REWARD_NAMES = {
     amazon_pay: '🟨 Amazon Pay Gift Card',
@@ -636,6 +637,7 @@ function AdminDashboard({ handleLogout }) {
               <button style={activeTab === 'announcements' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('announcements')}>Announcement Management</button>
               <button style={activeTab === 'polls' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('polls')}>Poll Management</button>
               <button style={activeTab === 'writing' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('writing')}>Writing Management</button>
+              <button style={activeTab === 'giftManagement' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('giftManagement')}>🎁 Gift Management</button>
           </div>
           {activeTab === 'announcements' && (
               <>
@@ -698,6 +700,7 @@ function AdminDashboard({ handleLogout }) {
               handleApproveWritingSubmission={handleApproveWritingSubmission}
             />
           )}
+          {activeTab === 'giftManagement' && <GiftManagement />}
           <section>
             <h2 style={sectionTitleStyle}>Redeem Requests</h2>
             <div style={requestsContainerStyle}>
@@ -711,12 +714,14 @@ function AdminDashboard({ handleLogout }) {
             </div>
           </section>
           <section>
-            <h2 style={sectionTitleStyle}>Treasure Key Management</h2>
+            <h2 style={sectionTitleStyle}>🗝️ Treasure Key Management</h2>
             <div style={announcementFormStyle}>
                 <input type="email" style={inputStyle} placeholder="User Email" value={treasureKeyUserEmail} onChange={(e) => setTreasureKeyUserEmail(e.target.value)} />
                  {treasureKeyMessage && <p style={{ color: 'green', marginBottom: '1rem' }}>{treasureKeyMessage}</p>}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-                    {['bronze', 'silver', 'gold', 'diamond'].map(keyType => (
+                    {[
+                        'bronze', 'silver', 'gold', 'diamond'
+                    ].map(keyType => (
                         <div key={keyType} style={{ border: '1px solid #ccc', borderRadius: '8px', padding: '1rem' }}>
                             <h3 style={{ textTransform: 'capitalize', marginBottom: '1rem' }}>{keyType} Keys</h3>
                             <div style={{ display: 'flex', gap: '0.5rem'}}>

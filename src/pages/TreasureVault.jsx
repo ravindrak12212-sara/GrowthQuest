@@ -10,6 +10,7 @@ function TreasureVault({ user }) {
   const [isConfirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [isSuccessDialogOpen, setSuccessDialogOpen] = useState(false);
   const [unlockedTreasureId, setUnlockedTreasureId] = useState(null);
+  const [selectedVault, setSelectedVault] = useState(null);
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
@@ -32,11 +33,12 @@ function TreasureVault({ user }) {
 
   const handleUnlock = async () => {
     setConfirmDialogOpen(false);
-    if (!user) {
-      setError("You must be logged in to perform this action.");
+    if (!user || !selectedVault) {
+      setError("An error occurred. Please try again.");
       return;
     }
 
+    const vault = VAULTS[selectedVault];
     const userDocRef = doc(db, 'users', user.uid);
     const unlocksCollectionRef = collection(db, 'treasureUnlocks');
     const newUnlockRef = doc(unlocksCollectionRef);
@@ -49,20 +51,20 @@ function TreasureVault({ user }) {
           throw "User document does not exist!";
         }
 
-        const currentKeys = userDoc.data().treasureKeys?.bronze || 0;
-        if (currentKeys < 5) {
-            throw "Not enough Bronze Keys.";
+        const currentKeys = userDoc.data().treasureKeys?.[selectedVault] || 0;
+        if (currentKeys < vault.target) {
+            throw `Not enough ${vault.name} Keys.`;
         }
 
         // Deduct keys
         transaction.update(userDocRef, { 
-            'treasureKeys.bronze': currentKeys - 5 
+            [`treasureKeys.${selectedVault}`]: currentKeys - vault.target 
         });
 
         // Create unlock record
         transaction.set(newUnlockRef, {
             userId: user.uid,
-            vaultType: "bronze",
+            vaultType: selectedVault,
             status: "RESERVED",
             giftAssigned: false,
             deliveryDetailsSubmitted: false,
@@ -75,13 +77,14 @@ function TreasureVault({ user }) {
       setSuccessDialogOpen(true);
 
     } catch (err) {
-      if (err === "Not enough Bronze Keys.") {
-          setError("You don't have enough Bronze Keys to unlock this vault.");
-      } else {
-          console.error("Transaction failed: ", err);
-          setError("Unlock Failed. Please try again later.");
-      }
+      setError(typeof err === 'string' ? err : "Unlock Failed. Please try again later.");
+      console.error("Transaction failed: ", err);
     }
+  };
+
+  const openConfirmationDialog = (vaultType) => {
+    setSelectedVault(vaultType);
+    setConfirmDialogOpen(true);
   };
 
   const handleSuccessDialogClose = () => {
@@ -247,13 +250,6 @@ function TreasureVault({ user }) {
     flexDirection: 'column'
   });
 
-  const simpleStatusTextStyle = (ready) => ({
-    fontSize: '1.2rem',
-    fontWeight: 'bold',
-    color: ready ? '#a7f3d0' : '#fecaca',
-    marginBottom: '1rem',
-  });
-
   const lockedSubtextStyle = {
       fontSize: '0.9rem',
       fontWeight: 'normal',
@@ -273,12 +269,6 @@ function TreasureVault({ user }) {
       cursor: 'pointer',
       transition: 'background 0.3s ease'
   };
-
-  const disabledUnlockButtonStyle = {
-    ...unlockButtonStyle,
-    background: 'rgba(255, 255, 255, 0.1)',
-    cursor: 'not-allowed',
-  }
 
   const modalBackdropStyle = {
     position: 'fixed',
@@ -347,11 +337,11 @@ function TreasureVault({ user }) {
 
   return (
     <div style={pageStyle}>
-        {isConfirmDialogOpen && (
+        {isConfirmDialogOpen && selectedVault && (
             <div style={modalBackdropStyle} onClick={() => setConfirmDialogOpen(false)}>
                 <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
-                    <h2 style={modalTitleStyle}>Unlock Bronze Treasure Vault?</h2>
-                    <p style={modalParagraphStyle}>This will consume 5 Bronze Keys.</p>
+                    <h2 style={modalTitleStyle}>Unlock {VAULTS[selectedVault].name} Treasure Vault?</h2>
+                    <p style={modalParagraphStyle}>This will consume {VAULTS[selectedVault].target} {VAULTS[selectedVault].name} Keys.</p>
                     <p style={{...modalParagraphStyle, fontWeight: 'bold', color: '#c0392b'}}>This action cannot be undone.</p>
                     
                     <div style={{display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '2rem'}}>
@@ -370,11 +360,11 @@ function TreasureVault({ user }) {
             </div>
         )}
 
-        {isSuccessDialogOpen && (
+        {isSuccessDialogOpen && selectedVault && (
             <div style={modalBackdropStyle} onClick={handleSuccessDialogClose}>
                 <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
                     <h2 style={modalTitleStyle}>🎉 Congratulations!</h2>
-                    <p style={modalParagraphStyle}>Your Bronze Treasure Vault has been unlocked successfully.</p>
+                    <p style={modalParagraphStyle}>Your {VAULTS[selectedVault].name} Treasure Vault has been unlocked successfully.</p>
                     <p style={modalParagraphStyle}>Your Mystery Gift has been reserved.</p>
                     <p style={{...modalParagraphStyle, color: '#555'}}>Click below to enter your delivery details.</p>
                     
@@ -392,7 +382,7 @@ function TreasureVault({ user }) {
         {error && (
             <div style={modalBackdropStyle} onClick={() => setError('')}>
                 <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
-                    <h2 style={errorModalTitleStyle}>{error === "You don't have enough Bronze Keys to unlock this vault." ? 'Not Enough Keys' : 'Unlock Failed'}</h2>
+                    <h2 style={errorModalTitleStyle}>Unlock Failed</h2>
                     <p style={modalParagraphStyle}>{error}</p>
                     <div style={{display: 'flex', justifyContent: 'center', marginTop: '2rem'}}>
                         <button 
@@ -432,76 +422,39 @@ function TreasureVault({ user }) {
                 onMouseEnter={() => setHovered(keyType)}
                 onMouseLeave={() => setHovered(null)}
             >
-              {keyType === 'bronze' ? (
-                // --- IMPROVED BRONZE CARD ---
-                <>
-                  <div>
-                    <div style={vaultHeaderStyle}>
-                        <span style={vaultIconStyle}>{vault.icon}</span>
-                        <h2 style={vaultTitleStyle}>{vault.name} Vault</h2>
+              <div>
+                <div style={vaultHeaderStyle}>
+                    <span style={vaultIconStyle}>{vault.icon}</span>
+                    <h2 style={vaultTitleStyle}>{vault.name} Vault</h2>
+                </div>
+                <p style={vaultDescriptionStyle}>{vault.description}</p>
+                <div style={progressContainerStyle}>
+                    <div style={progressTitleStyle}>Progress</div>
+                    <div style={progressBarStyle}>
+                        <div style={progressBarFillStyle(progress)}></div>
                     </div>
-                    <p style={vaultDescriptionStyle}>{vault.description}</p>
-                    <div style={progressContainerStyle}>
-                        <div style={progressTitleStyle}>Progress</div>
-                        <div style={progressBarStyle}>
-                            <div style={progressBarFillStyle(progress)}></div>
-                        </div>
-                        <div style={progressTextStyle}>{currentKeys} / {vault.target} {vault.name} Keys</div>
-                    </div>
-                  </div>
+                    <div style={progressTextStyle}>{currentKeys} / {vault.target} {vault.name} Keys</div>
+                </div>
+              </div>
 
-                  <div style={statusContainerStyle}>
-                    {isReady ? (
-                        <>
-                            <div style={statusTextStyle(true)}>🟢 Ready to Unlock</div>
-                            <button 
-                                style={unlockButtonStyle}
-                                onClick={() => setConfirmDialogOpen(true)}
-                            >
-                                Unlock Treasure Vault
-                            </button>
-                        </>                    
-                    ) : (
-                        <div style={statusTextStyle(false)}>
-                            <span>🔒 Locked</span>
-                            <span style={lockedSubtextStyle}>Collect {keysNeeded} more {vault.name} Keys</span>
-                        </div>
-                    )}
-                  </div>
-                </>
-              ) : (
-                // --- ORIGINAL CARDS ---
-                <>
-                  <div>
-                    <div style={vaultHeaderStyle}>
-                        <span style={vaultIconStyle}>{vault.icon}</span>
-                        <h2 style={vaultTitleStyle}>{vault.name} Treasure Vault</h2>
+              <div style={statusContainerStyle}>
+                {isReady ? (
+                    <>
+                        <div style={statusTextStyle(true)}>🟢 Ready to Unlock</div>
+                        <button 
+                            style={unlockButtonStyle}
+                            onClick={() => openConfirmationDialog(keyType)}
+                        >
+                            Unlock Treasure Vault
+                        </button>
+                    </>                    
+                ) : (
+                    <div style={statusTextStyle(false)}>
+                        <span>🔒 Locked</span>
+                        <span style={lockedSubtextStyle}>Collect {keysNeeded} more {vault.name} Keys</span>
                     </div>
-                    <p style={vaultDescriptionStyle}>{vault.description}</p>
-                    <div style={progressContainerStyle}>
-                      <div style={progressTitleStyle}>Progress</div>
-                      <div style={progressBarStyle}>
-                          <div style={progressBarFillStyle(progress)}></div>
-                      </div>
-                      <div style={progressTextStyle}>{currentKeys} / {vault.target} {vault.name} Keys</div>
-                    </div>
-                  </div>
-
-                  <div style={statusContainerStyle}>
-                    {isReady ? (
-                        <>
-                            <p style={simpleStatusTextStyle(true)}>🟢 Ready to Unlock</p>
-                            <button style={disabledUnlockButtonStyle} disabled>Unlock Coming Soon</button>
-                        </>
-                    ) : (
-                       <div style={statusTextStyle(false)}>
-                            <span>🔒 Locked</span>
-                            <span style={lockedSubtextStyle}>Collect {keysNeeded} more {vault.name} Keys</span>
-                        </div>
-                    )}
-                  </div>
-                </>
-              )}
+                )}
+              </div>
             </div>
           );
         })}
