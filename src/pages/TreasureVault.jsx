@@ -3,12 +3,40 @@ import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase/firebase';
 import { doc, onSnapshot, runTransaction, collection, serverTimestamp } from 'firebase/firestore';
 
+const GIFT_COLLECTION = [
+    { category: '📱 Electronics', items: ['Bluetooth Speakers', 'Earbuds', 'Smart Watches', 'Power Banks', 'Mobile Accessories', 'USB Hubs', 'Ring Lights', 'Mini Projectors', 'Wireless Chargers', 'Webcams'] },
+    { category: '💻 Computer Accessories', items: ['SSD', 'Pendrive', 'Laptop Stand', 'Cooling Pad', 'Gaming Mouse', 'Mechanical Keyboard', 'Mouse Pad', 'HDMI Cable', 'USB Cable', 'Card Reader'] },
+    { category: '🎮 Gaming', items: ['Gaming Controller', 'Gaming Headset', 'RGB Keyboard', 'Gaming Mouse', 'Gaming Mouse Pad', 'Console Accessories'] },
+    { category: '🧸 Toys', items: ['Teddy Bear', 'RC Car', 'Building Blocks', 'Barbie Doll', 'Puzzle Set', 'Soft Toys', 'Hot Wheels', 'Toy Drone', 'Cricket Set', 'Football'] },
+    { category: '👶 Baby Products', items: ['Baby Blanket', 'Baby Pillow', 'Baby Dress', 'Baby Toy Set', 'Feeding Bottle', 'Baby Care Kit'] },
+    { category: '👕 Fashion', items: ['T-Shirts', 'Shirts', 'Hoodies', 'Jackets', 'Jeans', 'Shoes', 'Sandals', 'Caps', 'Belts', 'Wallets'] },
+    { category: '👜 Bags & Travel', items: ['Backpack', 'Laptop Bag', 'Travel Bag', 'Sling Bag', 'Duffel Bag', 'Passport Holder', 'Luggage Tags'] },
+    { category: '⌚ Accessories', items: ['Watches', 'Sunglasses', 'Bracelets', 'Chains', 'Rings', 'Earrings'] },
+    { category: '💄 Beauty', items: ['Makeup Kit', 'Perfume', 'Lipstick', 'Hair Dryer', 'Face Wash', 'Skin Care Kit'] },
+    { category: '🧴 Personal Care', items: ['Trimmer', 'Grooming Kit', 'Electric Toothbrush', 'Shampoo Kit', 'Body Care Kit'] },
+    { category: '🏋️ Fitness', items: ['Dumbbells', 'Yoga Mat', 'Resistance Bands', 'Gym Bottle', 'Fitness Tracker', 'Skipping Rope'] },
+    { category: '⚽ Sports', items: ['Cricket Bat', 'Football', 'Volleyball', 'Badminton Kit', 'Table Tennis Set'] },
+    { category: '🏠 Home Essentials', items: ['Coffee Mug', 'Water Bottle', 'Lunch Box', 'Wall Clock', 'Bedsheet', 'Storage Box', 'Pillow'] },
+    { category: '🛋️ Home Decor', items: ['LED Lights', 'Table Lamp', 'Photo Frames', 'Artificial Plants', 'Aroma Diffuser'] },
+    { category: '🍳 Kitchen', items: ['Dinner Set', 'Knife Set', 'Storage Containers', 'Air Fryer', 'Mixer Bottle'] },
+    { category: '🍫 Chocolates', items: ['Ferrero Rocher', 'Cadbury Celebration', 'KitKat', 'Lindt', 'Premium Chocolate Box'] },
+    { category: '🍿 Snacks', items: ['Dry Fruits', 'Cookies', 'Premium Tea', 'Coffee Hamper', 'Healthy Snack Box'] },
+    { category: '📚 Books', items: ['Atomic Habits', 'Rich Dad Poor Dad', 'Ikigai', 'Deep Work', 'The Psychology of Money', 'The Alchemist'] },
+    { category: '🎁 Gift Cards', items: ['Amazon', 'Flipkart', 'Myntra', 'Swiggy', 'Zomato', 'BookMyShow', 'Google Play'] },
+    { category: '🐶 Pet Care', items: ['Dog Toys', 'Cat Toys', 'Pet Bed', 'Pet Bowl', 'Grooming Kit'] },
+    { category: '🚗 Automobile', items: ['Car Vacuum', 'Car Charger', 'Mobile Holder', 'Seat Cushion', 'Car Perfume'] },
+    { category: '🌱 Gardening', items: ['Plant Pots', 'Seeds', 'Watering Can', 'Gardening Tools'] },
+    { category: '🎉 Festival Specials', items: ['Diwali Hampers', 'Christmas Gifts', 'Ugadi Hampers', 'Sankranti Specials', 'Rakhi Gifts'] },
+    { category: '⭐ Premium Rewards', items: ['Smartphones', 'Tablets', 'Laptops', 'Smart TVs', 'Premium Headphones', 'Bicycles'] },
+];
+
 function TreasureVault({ user }) {
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [hovered, setHovered] = useState(null);
   const [isConfirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [isSuccessDialogOpen, setSuccessDialogOpen] = useState(false);
+  const [isGiftCollectionModalOpen, setGiftCollectionModalOpen] = useState(false);
   const [unlockedTreasureId, setUnlockedTreasureId] = useState(null);
   const [selectedVault, setSelectedVault] = useState(null);
   const [error, setError] = useState('');
@@ -56,12 +84,10 @@ function TreasureVault({ user }) {
             throw `Not enough ${vault.name} Keys.`;
         }
 
-        // Deduct keys
         transaction.update(userDocRef, { 
             [`treasureKeys.${selectedVault}`]: currentKeys - vault.target 
         });
 
-        // Create unlock record
         transaction.set(newUnlockRef, {
             userId: user.uid,
             vaultType: selectedVault,
@@ -322,6 +348,62 @@ function TreasureVault({ user }) {
       minWidth: '100px'
   }
 
+  const giftModalContentStyle = {
+      ...modalContentStyle,
+      maxWidth: '600px',
+      textAlign: 'left',
+      maxHeight: '80vh',
+      display: 'flex',
+      flexDirection: 'column'
+  };
+
+  const giftModalBodyStyle = {
+      flexGrow: 1,
+      overflowY: 'auto',
+      paddingRight: '1rem', 
+  };
+
+  const giftCategoryGridStyle = {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '1.5rem'
+  }
+
+  const giftCategoryStyle = {
+      fontSize: '1.2rem',
+      fontWeight: '600',
+      color: '#4a00e0',
+      marginTop: '1rem',
+      marginBottom: '0.8rem',
+  };
+
+  const giftListStyle = {
+      listStyle: 'none',
+      padding: 0,
+      margin: 0,
+  };
+
+  const giftItemStyle = {
+      fontSize: '0.95rem',
+      padding: '0.3rem 0',
+      color: '#555'
+  };
+
+  const exploreButtonStyle = {
+    display: 'block',
+    margin: '3rem auto 0 auto',
+    padding: '1rem 2.5rem',
+    fontSize: '1.2rem',
+    fontWeight: '600',
+    color: 'white',
+    background: 'linear-gradient(to right, #4a00e0, #8e2de2)',
+    border: 'none',
+    borderRadius: '50px',
+    cursor: 'pointer',
+    boxShadow: '0 4px 15px rgba(0,0,0,0.2)',
+    transition: 'transform 0.2s, box-shadow 0.2s'
+  }
+
   const VAULTS = {
     bronze: { name: 'Bronze', icon: '🥉', target: 5, gradient: 'linear-gradient(135deg, #cd7f32, #a05a2c)', description: 'Unlock exciting mystery gifts perfect for your first adventure.' },
     silver: { name: 'Silver', icon: '🥈', target: 15, gradient: 'linear-gradient(135deg, #c0c0c0, #a9a9a9)', description: 'Bigger surprises await dedicated explorers.' },
@@ -395,6 +477,45 @@ function TreasureVault({ user }) {
             </div>
         )}
 
+        {isGiftCollectionModalOpen && (
+             <div style={modalBackdropStyle} onClick={() => setGiftCollectionModalOpen(false)}>
+                <div style={giftModalContentStyle} onClick={(e) => e.stopPropagation()}>
+                    <h2 style={{...modalTitleStyle, textAlign: 'center', flexShrink: 0}}>🎁 Mystery Gift Collection</h2>
+                    <div style={giftModalBodyStyle}>
+                        <div style={giftCategoryGridStyle}>
+                            {GIFT_COLLECTION.map(category => (
+                                <div key={category.category}>
+                                    <h3 style={giftCategoryStyle}>{category.category}</h3>
+                                    <ul style={giftListStyle}>
+                                        {category.items.map(item => (
+                                            <li key={item} style={giftItemStyle}>• {item}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <div style={{flexShrink: 0}}>
+                        <div style={{textAlign: 'center', marginTop: '1.5rem', fontSize: '1rem', fontWeight: '600', color: '#555'}}>
+                            <p style={{margin: '0.4rem'}}>✨ 400+ Mystery Gifts Available</p>
+                            <p style={{margin: '0.4rem'}}>🏷️ 20+ Gift Categories</p>
+                            <p style={{margin: '0.4rem'}}>🎁 New Gifts Added Regularly</p>
+                        </div>
+                         <p style={{textAlign: 'center', fontSize: '0.8rem', color: '#888', marginTop: '1rem'}}>
+                            ⭐ The final gift is selected and assigned by the GrowthQuest Admin after successful verification.
+                        </p>
+                        <div style={{display: 'flex', justifyContent: 'center', marginTop: '2rem'}}>
+                            <button 
+                                style={{...modalButtonStyle, background: '#eee', color: '#333'}} 
+                                onClick={() => setGiftCollectionModalOpen(false)}>
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
         <button style={backButtonStyle} onClick={() => navigate('/dashboard')}>
             <span style={{marginRight: '0.5rem'}}>←</span> Back to Dashboard
         </button>
@@ -459,6 +580,9 @@ function TreasureVault({ user }) {
           );
         })}
       </div>
+      <button style={exploreButtonStyle} onClick={() => setGiftCollectionModalOpen(true)}>
+          🎁 Explore Mystery Gift Collection
+      </button>
     </div>
   );
 }
