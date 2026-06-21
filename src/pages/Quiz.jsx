@@ -1,21 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
-import { doc, getDoc, runTransaction, collection, increment, serverTimestamp, query, where, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, runTransaction, collection, increment, serverTimestamp, query, where, getDocs, setDoc } from 'firebase/firestore';
 
 function Quiz() {
   const [quizQuestions, setQuizQuestions] = useState([]);
   const [selectedAnswers, setSelectedAnswers] = useState([]);
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
-  const [points, setPoints] = useState(0);
   const [updateMessage, setUpdateMessage] = useState('');
-  const [currentQuizVersion, setCurrentQuizVersion] = useState(0);
   const [quizAttemptId, setQuizAttemptId] = useState(null);
-
   const [loading, setLoading] = useState(true);
   const [quizLoading, setQuizLoading] = useState(true);
-  const [hasAttempted, setHasAttempted] = useState(false);
+  const [hasCompleted, setHasCompleted] = useState(false);
   const navigate = useNavigate();
   const user = auth.currentUser;
 
@@ -27,27 +24,21 @@ function Quiz() {
       }
       setLoading(true);
 
-      const quizSettingsRef = doc(db, 'quizSettings', 'current');
-      const quizSettingsSnap = await getDoc(quizSettingsRef);
-      const version = quizSettingsSnap.exists() ? quizSettingsSnap.data().currentVersion : 1;
-      setCurrentQuizVersion(version);
-
-      const attemptId = `${user.uid}_v${version}`;
+      const today = new Date().toISOString().slice(0, 10);
+      const attemptId = `${user.uid}_${today}`;
       setQuizAttemptId(attemptId);
       const quizAttemptRef = doc(db, 'quizAttempts', attemptId);
 
       try {
         const docSnap = await getDoc(quizAttemptRef);
         if (docSnap.exists()) {
-          const attemptData = docSnap.data();
-          if (attemptData.status === 'COMPLETED' || attemptData.status === 'IN_PROGRESS') {
-            setHasAttempted(true);
-          }
+          if (docSnap.data().status === 'COMPLETED') {
+            setHasCompleted(true);
+          } 
         } else {
-          // Create a new attempt record
           await setDoc(quizAttemptRef, {
             userId: user.uid,
-            quizVersion: version,
+            date: today,
             startedAt: serverTimestamp(),
             status: 'IN_PROGRESS'
           });
@@ -65,7 +56,7 @@ function Quiz() {
 
   useEffect(() => {
     const fetchQuestions = async () => {
-      if (!user || hasAttempted || loading || !currentQuizVersion) {
+      if (!user || hasCompleted || loading) {
           setQuizLoading(false);
           return;
       }
@@ -73,21 +64,25 @@ function Quiz() {
       try {
         const q = query(
           collection(db, "quizQuestions"), 
-          where("active", "==", true),
-          where("quizVersion", "==", currentQuizVersion)
+          where("active", "==", true)
         );
         const querySnapshot = await getDocs(q);
-        let activeQuestions = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const allQuestions = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        // The problem description implies we should show all available questions for the version
-        // not just a random subset of 5.
-        // if (activeQuestions.length > 5) {
-        //   activeQuestions.sort(() => 0.5 - Math.random());
-        //   activeQuestions = activeQuestions.slice(0, 5);
-        // }
+        const easyQuestions = allQuestions.filter(q => (q.difficulty || "").trim().toLowerCase() === 'easy');
+        const mediumQuestions = allQuestions.filter(q => (q.difficulty || "").trim().toLowerCase() === 'medium');
+        const hardQuestions = allQuestions.filter(q => (q.difficulty || "").trim().toLowerCase() === 'hard');
 
-        setQuizQuestions(activeQuestions);
-        setSelectedAnswers(Array(activeQuestions.length).fill(null));
+        const shuffle = (arr) => arr.sort(() => 0.5 - Math.random());
+
+        const selectedEasy = shuffle(easyQuestions).slice(0, Math.min(5, easyQuestions.length));
+        const selectedMedium = shuffle(mediumQuestions).slice(0, Math.min(5, mediumQuestions.length));
+        const selectedHard = shuffle(hardQuestions).slice(0, Math.min(5, hardQuestions.length));
+
+        const finalQuestions = [...selectedEasy, ...selectedMedium, ...selectedHard];
+
+        setQuizQuestions(finalQuestions);
+        setSelectedAnswers(Array(finalQuestions.length).fill(null));
       } catch (err) {
         console.error("Error fetching quiz questions:", err);
         setUpdateMessage("Failed to load the quiz. Please try again later.");
@@ -96,8 +91,10 @@ function Quiz() {
       }
     };
 
-    fetchQuestions();
-  }, [user, hasAttempted, loading, currentQuizVersion]);
+    if (!loading) {
+        fetchQuestions();
+    }
+  }, [user, hasCompleted, loading]);
 
   const handleOptionChange = (questionIndex, option) => {
     if (submitted) return;
@@ -107,13 +104,7 @@ function Quiz() {
   };
 
   const calculatePoints = (correctAnswers) => {
-      switch (correctAnswers) {
-          case 5: return 10;
-          case 4: return 8;
-          case 3: return 5;
-          case 2: return 2;
-          default: return 0;
-      }
+      return correctAnswers * 2;
   };
 
   const handleSubmit = async () => {
@@ -130,7 +121,6 @@ function Quiz() {
 
     const calculatedPoints = calculatePoints(correctAnswers);
     setScore(correctAnswers);
-    setPoints(calculatedPoints);
 
     if (!user) {
       setUpdateMessage("You must be logged in to submit.");
@@ -138,14 +128,22 @@ function Quiz() {
       return;
     }
 
-    const userDocRef = doc(db, 'users', user.uid);
     const quizAttemptRef = doc(db, 'quizAttempts', quizAttemptId);
     const transactionRecordRef = doc(collection(db, 'transactions'));
 
     try {
+        const usersRef = collection(db, "users");
+        const userQuery = query(usersRef, where("uid", "==", user.uid));
+        const querySnapshot = await getDocs(userQuery);
+
+        if (querySnapshot.empty) {
+            throw new Error("Critical error: Could not find user profile to update points.");
+        }
+        const userDocRef = querySnapshot.docs[0].ref;
+
       await runTransaction(db, async (transaction) => {
         const quizAttemptDoc = await transaction.get(quizAttemptRef);
-        if (!quizAttemptDoc.exists() || quizAttemptDoc.data().status === 'COMPLETED') {
+        if (quizAttemptDoc.exists() && quizAttemptDoc.data().status === 'COMPLETED') {
           throw new Error("This quiz has already been completed.");
         }
 
@@ -176,7 +174,7 @@ function Quiz() {
     } catch (error) {
       console.error("Error processing quiz results: ", error);
       setUpdateMessage(error.message || "Could not record your quiz attempt. Please try again.");
-      setHasAttempted(true); // Block re-attempt on error
+      setHasCompleted(true);
     }
   };
 
@@ -213,13 +211,13 @@ function Quiz() {
     return <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh'}}>Loading Quiz...</div>;
   }
 
-  if (hasAttempted) {
+  if (hasCompleted) {
       return (
         <div style={pageStyle}>
           <button style={backButtonStyle} onClick={() => navigate('/dashboard')}>&larr; Back to Dashboard</button>
             <div style={quizContainerStyle}>
-                <h2 style={{textAlign: 'center', color: '#4a00e0'}}>Quiz In Progress or Completed</h2>
-                <p style={{textAlign: 'center', fontSize: '1.2rem', marginTop: '1rem'}}>You have already started or completed this quiz.</p>
+                <h2 style={{textAlign: 'center', color: '#4a00e0'}}>Quiz Already Completed</h2>
+                <p style={{textAlign: 'center', fontSize: '1.2rem', marginTop: '1rem'}}>You have already completed the quiz for today. Please come back tomorrow for a new set of questions.</p>
             </div>
         </div>
       );
@@ -231,7 +229,7 @@ function Quiz() {
           <button style={backButtonStyle} onClick={() => navigate('/dashboard')}>&larr; Back to Dashboard</button>
           <div style={quizContainerStyle}>
             <h1 style={{ textAlign: 'center', color: '#4a00e0', marginBottom: '2rem' }}>Daily Quiz</h1>
-            <p style={{ textAlign: 'center', fontSize: '1.2rem' }}>No quiz questions are available for the current version.</p>
+            <p style={{ textAlign: 'center', fontSize: '1.2rem' }}>No quiz questions are available at the moment. Please check back later.</p>
           </div>
         </div>
       );

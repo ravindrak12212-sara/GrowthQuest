@@ -34,7 +34,6 @@ function AdminDashboard({ handleLogout }) {
   const [writingTasksLoading, setWritingTasksLoading] = useState(true);
   const [announcementLoading, setAnnouncementLoading] = useState(true);
   const [quizQuestionsLoading, setQuizQuestionsLoading] = useState(true);
-  const [quizVersion, setQuizVersion] = useState(0);
 
   // TABS
   const [activeTab, setActiveTab] = useState('polls');
@@ -64,7 +63,7 @@ function AdminDashboard({ handleLogout }) {
 
   // QUIZ MANAGEMENT STATE
   const [quizQuestions, setQuizQuestions] = useState([]);
-  const [newQuizQuestion, setNewQuizQuestion] = useState({ question: '', options: { A: '', B: '', C: '', D: '' }, correctAnswer: '', active: false, quizVersion: 1 });
+  const [newQuizQuestion, setNewQuizQuestion] = useState({ question: '', options: { A: '', B: '', C: '', D: '' }, correctAnswer: '', active: false });
   const [editingQuizQuestion, setEditingQuizQuestion] = useState(null);
   
   const [treasureKeyUserEmail, setTreasureKeyUserEmail] = useState('');
@@ -134,19 +133,6 @@ function AdminDashboard({ handleLogout }) {
 
     const quizQuestionsQuery = query(collection(db, "quizQuestions"), orderBy("createdAt", "desc"));
     unsubscribes.push(onSnapshot(quizQuestionsQuery, (snapshot) => { setQuizQuestions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setQuizQuestionsLoading(false); }, (err) => { console.error("Quiz questions listener error:", err); setError("Failed to fetch quiz questions."); setQuizQuestionsLoading(false); }));
-
-    const quizSettingsRef = doc(db, 'quizSettings', 'current');
-    unsubscribes.push(onSnapshot(quizSettingsRef, (docSnap) => {
-        if (docSnap.exists()) {
-            const currentVersion = docSnap.data().currentVersion;
-            setQuizVersion(currentVersion);
-            setNewQuizQuestion(prevState => ({...prevState, quizVersion: currentVersion}));
-        } else {
-            setDoc(quizSettingsRef, { currentVersion: 1, updatedAt: serverTimestamp() });
-            setQuizVersion(1);
-            setNewQuizQuestion(prevState => ({...prevState, quizVersion: 1}));
-        }
-    }));
 
     return () => unsubscribes.forEach(unsub => unsub());
   }, []);
@@ -336,7 +322,7 @@ function AdminDashboard({ handleLogout }) {
         ...newQuizQuestion,
         createdAt: serverTimestamp(),
       });
-      setNewQuizQuestion({ question: '', options: { A: '', B: '', C: '', D: '' }, correctAnswer: '', active: false, quizVersion: quizVersion });
+      setNewQuizQuestion({ question: '', options: { A: '', B: '', C: '', D: '' }, correctAnswer: '', active: false });
       setMessage('Quiz question created successfully!');
     } catch (err) {
       console.error("Error creating quiz question:", err);
@@ -387,29 +373,6 @@ function AdminDashboard({ handleLogout }) {
     } catch (err) {
       console.error("Error deleting question:", err);
       setError("Failed to delete question.");
-    }
-  };
-
-  const handlePublishQuiz = async () => {
-    setError(null);
-    setMessage('');
-    try {
-      const quizSettingsRef = doc(db, 'quizSettings', 'current');
-      await runTransaction(db, async (transaction) => {
-        const quizSettingsDoc = await transaction.get(quizSettingsRef);
-        if (!quizSettingsDoc.exists()) {
-          transaction.set(quizSettingsRef, { currentVersion: 1, updatedAt: serverTimestamp() });
-        } else {
-          transaction.update(quizSettingsRef, { 
-            currentVersion: increment(1),
-            updatedAt: serverTimestamp()
-          });
-        }
-      });
-      setMessage(`Successfully published new quiz version.`);
-    } catch (err) {
-      console.error("Error publishing quiz:", err);
-      setError("Failed to publish new quiz version.");
     }
   };
 
@@ -817,8 +780,6 @@ function AdminDashboard({ handleLogout }) {
                     tableStyle={tableStyle}
                     thStyle={thStyle}
                     tdStyle={tdStyle}
-                    quizVersion={quizVersion}
-                    handlePublishQuiz={handlePublishQuiz}
                 />
             )}
           {activeTab === 'writing' && (
