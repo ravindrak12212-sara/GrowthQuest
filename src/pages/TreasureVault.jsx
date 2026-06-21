@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { db } from '../firebase/firebase';
-import { doc, onSnapshot, runTransaction, collection, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, runTransaction, collection, serverTimestamp, query, where, getDocs, orderBy } from 'firebase/firestore';
 
 const GIFT_COLLECTION = [
     { category: '📱 Electronics', items: ['Bluetooth Speakers', 'Earbuds', 'Smart Watches', 'Power Banks', 'Mobile Accessories', 'USB Hubs', 'Ring Lights', 'Mini Projectors', 'Wireless Chargers', 'Webcams'] },
@@ -40,6 +40,7 @@ function TreasureVault({ user }) {
   const [unlockedTreasureId, setUnlockedTreasureId] = useState(null);
   const [selectedVault, setSelectedVault] = useState(null);
   const [error, setError] = useState('');
+  const [treasureUnlocks, setTreasureUnlocks] = useState([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -49,14 +50,28 @@ function TreasureVault({ user }) {
     }
 
     const userDocRef = doc(db, 'users', user.uid);
-    const unsubscribe = onSnapshot(userDocRef, (doc) => {
+    const unsubscribeUser = onSnapshot(userDocRef, (doc) => {
       if (doc.exists()) {
         setUserData(doc.data());
       }
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    const q = query(
+      collection(db, "treasureUnlocks"),
+      where("userId", "==", user.uid),
+      orderBy("createdAt", "desc")
+    );
+
+    const unsubscribeTreasure = onSnapshot(q, (querySnapshot) => {
+      const unlocks = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setTreasureUnlocks(unlocks);
+    });
+
+    return () => {
+      unsubscribeUser();
+      unsubscribeTreasure();
+    };
   }, [user, navigate]);
 
   const handleUnlock = async () => {
@@ -81,21 +96,21 @@ function TreasureVault({ user }) {
 
         const currentKeys = userDoc.data().treasureKeys?.[selectedVault] || 0;
         if (currentKeys < vault.target) {
-            throw `Not enough ${vault.name} Keys.`;
+          throw `Not enough ${vault.name} Keys.`;
         }
 
-        transaction.update(userDocRef, { 
-            [`treasureKeys.${selectedVault}`]: currentKeys - vault.target 
+        transaction.update(userDocRef, {
+          [`treasureKeys.${selectedVault}`]: currentKeys - vault.target
         });
 
         transaction.set(newUnlockRef, {
-            userId: user.uid,
-            vaultType: selectedVault,
-            status: "RESERVED",
-            giftAssigned: false,
-            deliveryDetailsSubmitted: false,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
+          userId: user.uid,
+          vaultType: selectedVault,
+          status: "RESERVED",
+          giftAssigned: false,
+          deliveryDetailsSubmitted: false,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
         });
       });
 
@@ -113,13 +128,14 @@ function TreasureVault({ user }) {
     setConfirmDialogOpen(true);
   };
 
-  const handleSuccessDialogClose = () => {
+  const handleSuccessDialogClose = (unlockId) => {
     setSuccessDialogOpen(false);
-    if (unlockedTreasureId) {
-        navigate(`/delivery-profile?unlockId=${unlockedTreasureId}`);
+    if (unlockId) {
+        navigate(`/delivery-profile?unlockId=${unlockId}`);
     }
   };
 
+  // Styles
   const pageStyle = {
     fontFamily: `'Segoe UI', Tahoma, Geneva, Verdana, sans-serif`,
     backgroundColor: '#f4f7f6',
@@ -129,17 +145,17 @@ function TreasureVault({ user }) {
   };
 
   const backButtonStyle = {
-      position: 'absolute',
-      top: '2rem',
-      left: '2rem',
-      background: 'none',
-      border: 'none',
-      fontSize: '1rem',
-      fontWeight: '600',
-      color: '#555',
-      cursor: 'pointer',
-      display: 'flex',
-      alignItems: 'center',
+    position: 'absolute',
+    top: '2rem',
+    left: '2rem',
+    background: 'none',
+    border: 'none',
+    fontSize: '1rem',
+    fontWeight: '600',
+    color: '#555',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
   };
 
   const headerStyle = {
@@ -159,28 +175,28 @@ function TreasureVault({ user }) {
     color: '#666',
     marginTop: '0.5rem',
   };
-    
+
   const journeyContainerStyle = {
-      marginTop: '2rem',
-      padding: '1.5rem',
-      borderRadius: '12px',
-      background: 'white',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-      maxWidth: '600px',
-      margin: '2rem auto 0 auto',
+    marginTop: '2rem',
+    padding: '1.5rem',
+    borderRadius: '12px',
+    background: 'white',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+    maxWidth: '600px',
+    margin: '2rem auto 0 auto',
   };
 
   const journeyTitleStyle = {
-      fontSize: '1.3rem',
-      fontWeight: '600',
-      color: '#4a00e0',
-      margin: 0,
+    fontSize: '1.3rem',
+    fontWeight: '600',
+    color: '#4a00e0',
+    margin: 0,
   };
 
   const journeyPathStyle = {
-      fontSize: '1.1rem',
-      color: '#555',
-      margin: '0.5rem 0 0 0',
+    fontSize: '1.1rem',
+    color: '#555',
+    margin: '0.5rem 0 0 0',
   };
 
   const vaultsContainerStyle = {
@@ -219,12 +235,12 @@ function TreasureVault({ user }) {
     fontSize: '2rem',
     fontWeight: 'bold',
   };
-  
+
   const vaultDescriptionStyle = {
-      fontSize: '1rem',
-      opacity: 0.9,
-      lineHeight: 1.5,
-      marginBottom: '1.5rem',
+    fontSize: '1rem',
+    opacity: 0.9,
+    lineHeight: 1.5,
+    marginBottom: '1.5rem',
   };
 
   const progressContainerStyle = {
@@ -232,9 +248,9 @@ function TreasureVault({ user }) {
   };
 
   const progressTitleStyle = {
-      fontWeight: 600,
-      opacity: 0.9,
-      marginBottom: '0.5rem',
+    fontWeight: 600,
+    opacity: 0.9,
+    marginBottom: '0.5rem',
   };
 
   const progressBarStyle = {
@@ -251,12 +267,12 @@ function TreasureVault({ user }) {
     borderRadius: '6px',
     transition: 'width 0.5s ease-in-out',
   });
-  
+
   const progressTextStyle = {
-      textAlign: 'right',
-      marginTop: '0.5rem',
-      fontSize: '1rem',
-      fontWeight: 'bold',
+    textAlign: 'right',
+    marginTop: '0.5rem',
+    fontSize: '1rem',
+    fontWeight: 'bold',
   };
 
   const statusContainerStyle = {
@@ -277,23 +293,23 @@ function TreasureVault({ user }) {
   });
 
   const lockedSubtextStyle = {
-      fontSize: '0.9rem',
-      fontWeight: 'normal',
-      opacity: 0.8,
-      marginTop: '0.25rem',
+    fontSize: '0.9rem',
+    fontWeight: 'normal',
+    opacity: 0.8,
+    marginTop: '0.25rem',
   };
 
   const unlockButtonStyle = {
-      width: '100%',
-      padding: '1rem',
-      borderRadius: '12px',
-      border: 'none',
-      background: 'rgba(255, 255, 255, 0.3)',
-      color: 'white',
-      fontSize: '1.2rem',
-      fontWeight: 'bold',
-      cursor: 'pointer',
-      transition: 'background 0.3s ease'
+    width: '100%',
+    padding: '1rem',
+    borderRadius: '12px',
+    border: 'none',
+    background: 'rgba(255, 255, 255, 0.3)',
+    color: 'white',
+    fontSize: '1.2rem',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    transition: 'background 0.3s ease'
   };
 
   const modalBackdropStyle = {
@@ -310,57 +326,57 @@ function TreasureVault({ user }) {
   };
 
   const modalContentStyle = {
-      backgroundColor: 'white',
-      padding: '2rem',
-      borderRadius: '12px',
-      boxShadow: '0 5px 15px rgba(0,0,0,0.2)',
-      width: '90%',
-      maxWidth: '450px',
-      textAlign: 'center',
+    backgroundColor: 'white',
+    padding: '2rem',
+    borderRadius: '12px',
+    boxShadow: '0 5px 15px rgba(0,0,0,0.2)',
+    width: '90%',
+    maxWidth: '450px',
+    textAlign: 'center',
   };
 
   const modalTitleStyle = {
-      fontSize: '1.8rem',
-      fontWeight: 'bold',
-      color: '#4a00e0',
-      marginBottom: '1rem',
+    fontSize: '1.8rem',
+    fontWeight: 'bold',
+    color: '#4a00e0',
+    marginBottom: '1rem',
   };
 
   const errorModalTitleStyle = {
     ...modalTitleStyle,
     color: '#c0392b'
   }
-  
+
   const modalParagraphStyle = {
-      fontSize: '1rem',
-      lineHeight: '1.6',
-      marginBottom: '0.5rem',
+    fontSize: '1rem',
+    lineHeight: '1.6',
+    marginBottom: '0.5rem',
   };
-  
+
   const modalButtonStyle = {
-      padding: '0.8rem 1.5rem',
-      borderRadius: '8px',
-      border: 'none',
-      fontSize: '1rem',
-      fontWeight: 'bold',
-      cursor: 'pointer',
-      transition: 'transform 0.2s',
-      minWidth: '100px'
+    padding: '0.8rem 1.5rem',
+    borderRadius: '8px',
+    border: 'none',
+    fontSize: '1rem',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    transition: 'transform 0.2s',
+    minWidth: '100px'
   }
 
   const giftModalContentStyle = {
-      ...modalContentStyle,
-      maxWidth: '600px',
-      textAlign: 'left',
-      maxHeight: '80vh',
-      display: 'flex',
-      flexDirection: 'column'
+    ...modalContentStyle,
+    maxWidth: '600px',
+    textAlign: 'left',
+    maxHeight: '80vh',
+    display: 'flex',
+    flexDirection: 'column'
   };
 
   const giftModalBodyStyle = {
-      flexGrow: 1,
-      overflowY: 'auto',
-      paddingRight: '1rem', 
+    flexGrow: 1,
+    overflowY: 'auto',
+    paddingRight: '1rem',
   };
 
   const giftCategoryGridStyle = {
@@ -370,23 +386,23 @@ function TreasureVault({ user }) {
   }
 
   const giftCategoryStyle = {
-      fontSize: '1.2rem',
-      fontWeight: '600',
-      color: '#4a00e0',
-      marginTop: '1rem',
-      marginBottom: '0.8rem',
+    fontSize: '1.2rem',
+    fontWeight: '600',
+    color: '#4a00e0',
+    marginTop: '1rem',
+    marginBottom: '0.8rem',
   };
 
   const giftListStyle = {
-      listStyle: 'none',
-      padding: 0,
-      margin: 0,
+    listStyle: 'none',
+    padding: 0,
+    margin: 0,
   };
 
   const giftItemStyle = {
-      fontSize: '0.95rem',
-      padding: '0.3rem 0',
-      color: '#555'
+    fontSize: '0.95rem',
+    padding: '0.3rem 0',
+    color: '#555'
   };
 
   const exploreButtonStyle = {
@@ -404,6 +420,46 @@ function TreasureVault({ user }) {
     transition: 'transform 0.2s, box-shadow 0.2s'
   }
 
+  const rewardCardStyle = {
+    background: 'white',
+    borderRadius: '20px',
+    padding: '2rem',
+    boxShadow: '0 10px 20px rgba(0,0,0,0.1)',
+    marginBottom: '2rem',
+  };
+
+  const timelineContainerStyle = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    marginTop: '2rem',
+    overflowX: 'auto',
+    paddingBottom: '1rem'
+  };
+
+  const timelineItemStyle = (active) => ({
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textAlign: 'center',
+    color: active ? '#28a745' : '#ccc',
+    fontWeight: active ? '600' : 'normal',
+    minWidth: '120px'
+  });
+
+  const timelineIconStyle = (active) => ({
+    width: '30px',
+    height: '30px',
+    borderRadius: '50%',
+    background: active ? '#28a745' : '#ccc',
+    color: 'white',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    fontSize: '1rem',
+    marginBottom: '0.5rem',
+  });
+
+
   const VAULTS = {
     bronze: { name: 'Bronze', icon: '🥉', target: 5, gradient: 'linear-gradient(135deg, #cd7f32, #a05a2c)', description: 'Unlock exciting mystery gifts perfect for your first adventure.' },
     silver: { name: 'Silver', icon: '🥈', target: 15, gradient: 'linear-gradient(135deg, #c0c0c0, #a9a9a9)', description: 'Bigger surprises await dedicated explorers.' },
@@ -413,120 +469,180 @@ function TreasureVault({ user }) {
 
   const treasureKeys = userData?.treasureKeys || { bronze: 0, silver: 0, gold: 0, diamond: 0 };
 
+  const renderTimeline = (treasureUnlockData) => {
+    const stages = ['Treasure Unlocked', 'Delivery Profile Submitted', 'Mystery Gift Reserved', 'Packed', 'Shipped', 'Delivered'];
+    const statusMap = {
+      RESERVED: 1,
+      WAITING_FOR_DETAILS: 1,
+      GIFT_ASSIGNED: 3,
+      PACKED: 4,
+      SHIPPED: 5,
+      DELIVERED: 6,
+    };
+
+    let currentStage = 0;
+    if (treasureUnlockData) {
+      currentStage = statusMap[treasureUnlockData.status] || 0;
+      if (currentStage === 1 && treasureUnlockData.deliveryDetailsSubmitted) {
+        currentStage = 2;
+      }
+    }
+
+    return (
+      <div style={timelineContainerStyle}>
+        {stages.map((stage, index) => (
+          <div key={stage} style={timelineItemStyle(index < currentStage)}>
+            <div style={timelineIconStyle(index < currentStage)}>✓</div>
+            <span>{stage}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   if (loading) {
-    return <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh'}}>Loading...</div>;
+    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Loading...</div>;
   }
 
   return (
     <div style={pageStyle}>
-        {isConfirmDialogOpen && selectedVault && (
-            <div style={modalBackdropStyle} onClick={() => setConfirmDialogOpen(false)}>
-                <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
-                    <h2 style={modalTitleStyle}>Unlock {VAULTS[selectedVault].name} Treasure Vault?</h2>
-                    <p style={modalParagraphStyle}>This will consume {VAULTS[selectedVault].target} {VAULTS[selectedVault].name} Keys.</p>
-                    <p style={{...modalParagraphStyle, fontWeight: 'bold', color: '#c0392b'}}>This action cannot be undone.</p>
-                    
-                    <div style={{display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '2rem'}}>
-                        <button 
-                            style={{...modalButtonStyle, background: '#eee', color: '#333'}} 
-                            onClick={() => setConfirmDialogOpen(false)}>
-                            Cancel
-                        </button>
-                        <button 
-                            style={{...modalButtonStyle, background: 'linear-gradient(to right, #4a00e0, #8e2de2)', color: 'white'}}
-                            onClick={handleUnlock}>
-                            Unlock
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )}
+      {isConfirmDialogOpen && selectedVault && (
+        <div style={modalBackdropStyle} onClick={() => setConfirmDialogOpen(false)}>
+          <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
+            <h2 style={modalTitleStyle}>Unlock {VAULTS[selectedVault].name} Treasure Vault?</h2>
+            <p style={modalParagraphStyle}>This will consume {VAULTS[selectedVault].target} {VAULTS[selectedVault].name} Keys.</p>
+            <p style={{ ...modalParagraphStyle, fontWeight: 'bold', color: '#c0392b' }}>This action cannot be undone.</p>
 
-        {isSuccessDialogOpen && selectedVault && (
-            <div style={modalBackdropStyle} onClick={handleSuccessDialogClose}>
-                <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
-                    <h2 style={modalTitleStyle}>🎉 Congratulations!</h2>
-                    <p style={modalParagraphStyle}>Your {VAULTS[selectedVault].name} Treasure Vault has been unlocked successfully.</p>
-                    <p style={modalParagraphStyle}>Your Mystery Gift has been reserved.</p>
-                    <p style={{...modalParagraphStyle, color: '#555'}}>Click below to enter your delivery details.</p>
-                    
-                    <div style={{display: 'flex', justifyContent: 'center', marginTop: '2rem'}}>
-                        <button 
-                            style={{...modalButtonStyle, background: 'linear-gradient(to right, #4a00e0, #8e2de2)', color: 'white'}}
-                            onClick={handleSuccessDialogClose}>
-                            Enter Delivery Details
-                        </button>
-                    </div>
-                </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '2rem' }}>
+              <button
+                style={{ ...modalButtonStyle, background: '#eee', color: '#333' }}
+                onClick={() => setConfirmDialogOpen(false)}>
+                Cancel
+              </button>
+              <button
+                style={{ ...modalButtonStyle, background: 'linear-gradient(to right, #4a00e0, #8e2de2)', color: 'white' }}
+                onClick={handleUnlock}>
+                Unlock
+              </button>
             </div>
-        )}
+          </div>
+        </div>
+      )}
 
-        {error && (
-            <div style={modalBackdropStyle} onClick={() => setError('')}>
-                <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
-                    <h2 style={errorModalTitleStyle}>Unlock Failed</h2>
-                    <p style={modalParagraphStyle}>{error}</p>
-                    <div style={{display: 'flex', justifyContent: 'center', marginTop: '2rem'}}>
-                        <button 
-                            style={{...modalButtonStyle, background: '#eee', color: '#333'}} 
-                            onClick={() => setError('')}>
-                            OK
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )}
+      {isSuccessDialogOpen && selectedVault && (
+        <div style={modalBackdropStyle} onClick={() => handleSuccessDialogClose(unlockedTreasureId)}>
+          <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
+            <h2 style={modalTitleStyle}>🎉 Congratulations!</h2>
+            <p style={modalParagraphStyle}>Your {VAULTS[selectedVault].name} Treasure Vault has been unlocked successfully.</p>
+            <p style={modalParagraphStyle}>Your Mystery Gift has been reserved.</p>
+            <p style={{ ...modalParagraphStyle, color: '#555' }}>Click below to enter your delivery details.</p>
 
-        {isGiftCollectionModalOpen && (
-             <div style={modalBackdropStyle} onClick={() => setGiftCollectionModalOpen(false)}>
-                <div style={giftModalContentStyle} onClick={(e) => e.stopPropagation()}>
-                    <h2 style={{...modalTitleStyle, textAlign: 'center', flexShrink: 0}}>🎁 Mystery Gift Collection</h2>
-                    <div style={giftModalBodyStyle}>
-                        <div style={giftCategoryGridStyle}>
-                            {GIFT_COLLECTION.map(category => (
-                                <div key={category.category}>
-                                    <h3 style={giftCategoryStyle}>{category.category}</h3>
-                                    <ul style={giftListStyle}>
-                                        {category.items.map(item => (
-                                            <li key={item} style={giftItemStyle}>• {item}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                    <div style={{flexShrink: 0}}>
-                        <div style={{textAlign: 'center', marginTop: '1.5rem', fontSize: '1rem', fontWeight: '600', color: '#555'}}>
-                            <p style={{margin: '0.4rem'}}>✨ 400+ Mystery Gifts Available</p>
-                            <p style={{margin: '0.4rem'}}>🏷️ 20+ Gift Categories</p>
-                            <p style={{margin: '0.4rem'}}>🎁 New Gifts Added Regularly</p>
-                        </div>
-                         <p style={{textAlign: 'center', fontSize: '0.8rem', color: '#888', marginTop: '1rem'}}>
-                            ⭐ The final gift is selected and assigned by the GrowthQuest Admin after successful verification.
-                        </p>
-                        <div style={{display: 'flex', justifyContent: 'center', marginTop: '2rem'}}>
-                            <button 
-                                style={{...modalButtonStyle, background: '#eee', color: '#333'}} 
-                                onClick={() => setGiftCollectionModalOpen(false)}>
-                                Close
-                            </button>
-                        </div>
-                    </div>
-                </div>
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '2rem' }}>
+              <button
+                style={{ ...modalButtonStyle, background: 'linear-gradient(to right, #4a00e0, #8e2de2)', color: 'white' }}
+                onClick={() => handleSuccessDialogClose(unlockedTreasureId)}>
+                Enter Delivery Details
+              </button>
             </div>
-        )}
+          </div>
+        </div>
+      )}
 
-        <button style={backButtonStyle} onClick={() => navigate('/dashboard')}>
-            <span style={{marginRight: '0.5rem'}}>←</span> Back to Dashboard
-        </button>
-        <header style={headerStyle}>
-            <h1 style={headerTitleStyle}>🏰 Treasure Vault</h1>
-            <p style={subtitleStyle}>Collect Treasure Keys to unlock exclusive Mystery Gifts.</p>
-            <div style={journeyContainerStyle}>
-                <h3 style={journeyTitleStyle}>Your Treasure Journey</h3>
-                <p style={journeyPathStyle}>Bronze → Silver → Gold → Diamond</p>
+      {error && (
+        <div style={modalBackdropStyle} onClick={() => setError('')}>
+          <div style={modalContentStyle} onClick={(e) => e.stopPropagation()}>
+            <h2 style={errorModalTitleStyle}>Unlock Failed</h2>
+            <p style={modalParagraphStyle}>{error}</p>
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '2rem' }}>
+              <button
+                style={{ ...modalButtonStyle, background: '#eee', color: '#333' }}
+                onClick={() => setError('')}>
+                OK
+              </button>
             </div>
-        </header>
+          </div>
+        </div>
+      )}
+
+      {isGiftCollectionModalOpen && (
+        <div style={modalBackdropStyle} onClick={() => setGiftCollectionModalOpen(false)}>
+          <div style={giftModalContentStyle} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ ...modalTitleStyle, textAlign: 'center', flexShrink: 0 }}>🎁 Mystery Gift Collection</h2>
+            <div style={giftModalBodyStyle}>
+              <div style={giftCategoryGridStyle}>
+                {GIFT_COLLECTION.map(category => (
+                  <div key={category.category}>
+                    <h3 style={giftCategoryStyle}>{category.category}</h3>
+                    <ul style={giftListStyle}>
+                      {category.items.map(item => (
+                        <li key={item} style={giftItemStyle}>• {item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ flexShrink: 0 }}>
+              <div style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: '1rem', fontWeight: '600', color: '#555' }}>
+                <p style={{ margin: '0.4rem' }}>✨ 400+ Mystery Gifts Available</p>
+                <p style={{ margin: '0.4rem' }}>🏷️ 20+ Gift Categories</p>
+                <p style={{ margin: '0.4rem' }}>🎁 New Gifts Added Regularly</p>
+              </div>
+              <p style={{ textAlign: 'center', fontSize: '0.8rem', color: '#888', marginTop: '1rem' }}>
+                ⭐ The final gift is selected and assigned by the GrowthQuest Admin after successful verification.
+              </p>
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: '2rem' }}>
+                <button
+                  style={{ ...modalButtonStyle, background: '#eee', color: '#333' }}
+                  onClick={() => setGiftCollectionModalOpen(false)}>
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <button style={backButtonStyle} onClick={() => navigate('/dashboard')}>
+        <span style={{ marginRight: '0.5rem' }}>←</span> Back to Dashboard
+      </button>
+      <header style={headerStyle}>
+        <h1 style={headerTitleStyle}>🏰 Treasure Vault</h1>
+        <p style={subtitleStyle}>Collect Treasure Keys to unlock exclusive Mystery Gifts.</p>
+        <div style={journeyContainerStyle}>
+          <h3 style={journeyTitleStyle}>Your Treasure Journey</h3>
+          <p style={journeyPathStyle}>Bronze → Silver → Gold → Diamond</p>
+        </div>
+      </header>
+
+      <section style={{ marginTop: '3rem' }}>
+        <h2 style={{ fontSize: '2rem', fontWeight: 'bold', textAlign: 'center', marginBottom: '2rem', color: '#4a00e0' }}>🏆 My Treasure Rewards</h2>
+        {Object.keys(VAULTS).map(vaultType => {
+          const vault = VAULTS[vaultType];
+          const unlock = treasureUnlocks.find(u => u.vaultType === vaultType);
+
+          return (
+            <div key={vaultType} style={rewardCardStyle}>
+              <h3 style={{ ...modalTitleStyle, textAlign: 'left', fontSize: '1.5rem' }}>{vault.icon} {vault.name} Reward</h3>
+              {unlock ? (
+                <>
+                  <div style={{ marginTop: '1rem' }}>
+                    <p style={{ fontSize: '1rem', fontWeight: '500', color: '#333', margin: '0 0 0.5rem 0' }}>🎁 Your surprise is safely reserved and is being prepared.</p>
+                    <p style={{ fontSize: '1rem', margin: 0 }}><strong>Status:</strong> {unlock.status}</p>
+                  </div>
+                  {renderTimeline(unlock)}
+                </>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '2rem 0' }}>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#666' }}>🔒 Locked</div>
+                  <p style={{ color: '#888', marginTop: '0.5rem' }}>Collect more {vault.name} Keys to unlock this Treasure Vault.</p>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </section>
+
 
       <div style={vaultsContainerStyle}>
         {Object.keys(VAULTS).map(keyType => {
@@ -537,43 +653,43 @@ function TreasureVault({ user }) {
           const keysNeeded = vault.target - currentKeys;
 
           return (
-            <div 
-                key={keyType}
-                style={vaultCardStyle(vault.gradient, hovered === keyType)}
-                onMouseEnter={() => setHovered(keyType)}
-                onMouseLeave={() => setHovered(null)}
+            <div
+              key={keyType}
+              style={vaultCardStyle(vault.gradient, hovered === keyType)}
+              onMouseEnter={() => setHovered(keyType)}
+              onMouseLeave={() => setHovered(null)}
             >
               <div>
                 <div style={vaultHeaderStyle}>
-                    <span style={vaultIconStyle}>{vault.icon}</span>
-                    <h2 style={vaultTitleStyle}>{vault.name} Vault</h2>
+                  <span style={vaultIconStyle}>{vault.icon}</span>
+                  <h2 style={vaultTitleStyle}>{vault.name} Vault</h2>
                 </div>
                 <p style={vaultDescriptionStyle}>{vault.description}</p>
                 <div style={progressContainerStyle}>
-                    <div style={progressTitleStyle}>Progress</div>
-                    <div style={progressBarStyle}>
+                  <div style={progressTitleStyle}>Progress</div>
+                  <div style={progressBarStyle}>
                         <div style={progressBarFillStyle(progress)}></div>
-                    </div>
-                    <div style={progressTextStyle}>{currentKeys} / {vault.target} {vault.name} Keys</div>
+                  </div>
+                  <div style={progressTextStyle}>{currentKeys} / {vault.target} {vault.name} Keys</div>
                 </div>
               </div>
 
               <div style={statusContainerStyle}>
                 {isReady ? (
-                    <>
-                        <div style={statusTextStyle(true)}>🟢 Ready to Unlock</div>
-                        <button 
-                            style={unlockButtonStyle}
-                            onClick={() => openConfirmationDialog(keyType)}
-                        >
-                            Unlock Treasure Vault
-                        </button>
-                    </>                    
+                  <>
+                    <div style={statusTextStyle(true)}>🟢 Ready to Unlock</div>
+                    <button
+                      style={unlockButtonStyle}
+                      onClick={() => openConfirmationDialog(keyType)}
+                    >
+                      Unlock Treasure Vault
+                    </button>
+                  </>
                 ) : (
-                    <div style={statusTextStyle(false)}>
-                        <span>🔒 Locked</span>
-                        <span style={lockedSubtextStyle}>Collect {keysNeeded} more {vault.name} Keys</span>
-                    </div>
+                  <div style={statusTextStyle(false)}>
+                    <span>🔒 Locked</span>
+                    <span style={lockedSubtextStyle}>Collect {keysNeeded} more {vault.name} Keys</span>
+                  </div>
                 )}
               </div>
             </div>
@@ -581,7 +697,7 @@ function TreasureVault({ user }) {
         })}
       </div>
       <button style={exploreButtonStyle} onClick={() => setGiftCollectionModalOpen(true)}>
-          🎁 Explore Mystery Gift Collection
+        🎁 Explore Mystery Gift Collection
       </button>
     </div>
   );
