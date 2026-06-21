@@ -9,7 +9,6 @@ function Quiz() {
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
   const [updateMessage, setUpdateMessage] = useState('');
-  const [quizAttemptId, setQuizAttemptId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [quizLoading, setQuizLoading] = useState(true);
   const [hasCompleted, setHasCompleted] = useState(false);
@@ -26,7 +25,6 @@ function Quiz() {
 
       const today = new Date().toISOString().slice(0, 10);
       const attemptId = `${user.uid}_${today}`;
-      setQuizAttemptId(attemptId);
       const quizAttemptRef = doc(db, 'quizAttempts', attemptId);
 
       try {
@@ -108,7 +106,7 @@ function Quiz() {
   };
 
   const handleSubmit = async () => {
-    if (submitted || !quizAttemptId) return;
+    if (submitted) return;
     setSubmitted(true);
 
     let correctAnswers = 0;
@@ -128,31 +126,50 @@ function Quiz() {
       return;
     }
 
-    const quizAttemptRef = doc(db, 'quizAttempts', quizAttemptId);
+    const today = new Date().toISOString().slice(0, 10);
+    const attemptId = `${user.uid}_${today}`;
+    const quizAttemptRef = doc(db, 'quizAttempts', attemptId);
     const transactionRecordRef = doc(collection(db, 'transactions'));
 
     try {
-        const usersRef = collection(db, "users");
-        const userQuery = query(usersRef, where("uid", "==", user.uid));
+      await runTransaction(db, async (transaction) => {
+        // DEBUG: Find user by email instead of UID
+        console.log("auth.currentUser.uid:", user.uid);
+        console.log("auth.currentUser.email:", user.email);
+
+        const userQuery = query(collection(db, "users"), where("email", "==", user.email));
         const querySnapshot = await getDocs(userQuery);
 
-        if (querySnapshot.empty) {
-            throw new Error("Critical error: Could not find user profile to update points.");
-        }
-        const userDocRef = querySnapshot.docs[0].ref;
+        console.log("querySnapshot.size:", querySnapshot.size);
 
-      await runTransaction(db, async (transaction) => {
+        if (querySnapshot.empty) {
+          console.log("No document found for email. Existing user documents:");
+          const allUsersSnapshot = await getDocs(collection(db, "users"));
+          allUsersSnapshot.forEach(doc => {
+              console.log("Document ID:", doc.id);
+          });
+          throw new Error("Critical error: Could not find user profile via email to update points.");
+        }
+
+        const userDoc = querySnapshot.docs[0];
+        console.log("matched document ID:", userDoc.id);
+        const userDocRef = userDoc.ref;
+
         const quizAttemptDoc = await transaction.get(quizAttemptRef);
         if (quizAttemptDoc.exists() && quizAttemptDoc.data().status === 'COMPLETED') {
           throw new Error("This quiz has already been completed.");
         }
 
-        transaction.update(quizAttemptRef, {
-          score: correctAnswers,
-          pointsAwarded: calculatedPoints,
-          completedAt: serverTimestamp(),
-          status: 'COMPLETED'
-        });
+        transaction.set(
+          quizAttemptRef,
+          {
+            score: correctAnswers,
+            pointsAwarded: calculatedPoints,
+            completedAt: serverTimestamp(),
+            status: 'COMPLETED'
+          },
+          { merge: true }
+        );
 
         if (calculatedPoints > 0) {
           transaction.update(userDocRef, {
@@ -172,9 +189,8 @@ function Quiz() {
       setUpdateMessage(`You earned ${calculatedPoints} points!`);
 
     } catch (error) {
-      console.error("Error processing quiz results: ", error);
-      setUpdateMessage(error.message || "Could not record your quiz attempt. Please try again.");
-      setHasCompleted(true);
+      console.error("Quiz handleSubmit Error:", error);
+      setUpdateMessage(error.message);
     }
   };
 
