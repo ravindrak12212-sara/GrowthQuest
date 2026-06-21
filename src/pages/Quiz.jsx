@@ -1,53 +1,103 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
-import { doc, getDoc, runTransaction, collection, increment, serverTimestamp } from 'firebase/firestore';
-
-const quizData = [
-    { question: "What is 2 + 2?", options: ["3", "4", "5"], correctAnswer: "4" },
-    { question: "What is the capital of France?", options: ["London", "Paris", "Berlin"], correctAnswer: "Paris" },
-    { question: "What is the largest planet in our solar system?", options: ["Earth", "Jupiter", "Mars"], correctAnswer: "Jupiter" },
-    { question: "Who wrote 'Hamlet'?", options: ["Charles Dickens", "William Shakespeare", "Leo Tolstoy"], correctAnswer: "William Shakespeare" },
-    { question: "What is the chemical symbol for water?", options: ["H2O", "O2", "CO2"], correctAnswer: "H2O" },
-];
+import { doc, getDoc, runTransaction, collection, increment, serverTimestamp, query, where, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 
 function Quiz() {
-  const [selectedAnswers, setSelectedAnswers] = useState(Array(quizData.length).fill(null));
+  const [quizQuestions, setQuizQuestions] = useState([]);
+  const [selectedAnswers, setSelectedAnswers] = useState([]);
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
   const [points, setPoints] = useState(0);
   const [updateMessage, setUpdateMessage] = useState('');
+  const [currentQuizVersion, setCurrentQuizVersion] = useState(0);
+  const [quizAttemptId, setQuizAttemptId] = useState(null);
 
   const [loading, setLoading] = useState(true);
+  const [quizLoading, setQuizLoading] = useState(true);
   const [hasAttempted, setHasAttempted] = useState(false);
   const navigate = useNavigate();
   const user = auth.currentUser;
 
   useEffect(() => {
-    const checkQuizAttempt = async () => {
+    const setupQuiz = async () => {
       if (!user) {
         navigate('/');
         return;
       }
       setLoading(true);
-      const quizAttemptId = `${user.uid}_dailyQuiz1`;
-      const quizAttemptRef = doc(db, 'quizAttempts', quizAttemptId);
+
+      const quizSettingsRef = doc(db, 'quizSettings', 'current');
+      const quizSettingsSnap = await getDoc(quizSettingsRef);
+      const version = quizSettingsSnap.exists() ? quizSettingsSnap.data().currentVersion : 1;
+      setCurrentQuizVersion(version);
+
+      const attemptId = `${user.uid}_v${version}`;
+      setQuizAttemptId(attemptId);
+      const quizAttemptRef = doc(db, 'quizAttempts', attemptId);
 
       try {
         const docSnap = await getDoc(quizAttemptRef);
         if (docSnap.exists()) {
-          setHasAttempted(true);
+          const attemptData = docSnap.data();
+          if (attemptData.status === 'COMPLETED' || attemptData.status === 'IN_PROGRESS') {
+            setHasAttempted(true);
+          }
+        } else {
+          // Create a new attempt record
+          await setDoc(quizAttemptRef, {
+            userId: user.uid,
+            quizVersion: version,
+            startedAt: serverTimestamp(),
+            status: 'IN_PROGRESS'
+          });
         }
       } catch (error) {
-        console.error("Error checking quiz attempt:", error);
-        setUpdateMessage("Could not verify your quiz status. Please try again.");
+        console.error("Error setting up quiz attempt:", error);
+        setUpdateMessage("Could not initialize your quiz. Please try again.");
       } finally {
         setLoading(false);
       }
     };
 
-    checkQuizAttempt();
+    setupQuiz();
   }, [user, navigate]);
+
+  useEffect(() => {
+    const fetchQuestions = async () => {
+      if (!user || hasAttempted || loading || !currentQuizVersion) {
+          setQuizLoading(false);
+          return;
+      }
+
+      try {
+        const q = query(
+          collection(db, "quizQuestions"), 
+          where("active", "==", true),
+          where("quizVersion", "==", currentQuizVersion)
+        );
+        const querySnapshot = await getDocs(q);
+        let activeQuestions = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // The problem description implies we should show all available questions for the version
+        // not just a random subset of 5.
+        // if (activeQuestions.length > 5) {
+        //   activeQuestions.sort(() => 0.5 - Math.random());
+        //   activeQuestions = activeQuestions.slice(0, 5);
+        // }
+
+        setQuizQuestions(activeQuestions);
+        setSelectedAnswers(Array(activeQuestions.length).fill(null));
+      } catch (err) {
+        console.error("Error fetching quiz questions:", err);
+        setUpdateMessage("Failed to load the quiz. Please try again later.");
+      } finally {
+        setQuizLoading(false);
+      }
+    };
+
+    fetchQuestions();
+  }, [user, hasAttempted, loading, currentQuizVersion]);
 
   const handleOptionChange = (questionIndex, option) => {
     if (submitted) return;
@@ -67,12 +117,13 @@ function Quiz() {
   };
 
   const handleSubmit = async () => {
-    if (submitted) return;
-    setSubmitted(true); // Prevent UI double-clicks
+    if (submitted || !quizAttemptId) return;
+    setSubmitted(true);
 
     let correctAnswers = 0;
-    quizData.forEach((question, index) => {
-      if (selectedAnswers[index] === question.correctAnswer) {
+    quizQuestions.forEach((question, index) => {
+      const correctAnswerText = question.options[question.correctAnswer];
+      if (selectedAnswers[index] === correctAnswerText) {
         correctAnswers++;
       }
     });
@@ -87,7 +138,6 @@ function Quiz() {
       return;
     }
 
-    const quizAttemptId = `${user.uid}_dailyQuiz1`;
     const userDocRef = doc(db, 'users', user.uid);
     const quizAttemptRef = doc(db, 'quizAttempts', quizAttemptId);
     const transactionRecordRef = doc(collection(db, 'transactions'));
@@ -95,16 +145,15 @@ function Quiz() {
     try {
       await runTransaction(db, async (transaction) => {
         const quizAttemptDoc = await transaction.get(quizAttemptRef);
-        if (quizAttemptDoc.exists()) {
-          throw new Error("You have already completed today's quiz.");
+        if (!quizAttemptDoc.exists() || quizAttemptDoc.data().status === 'COMPLETED') {
+          throw new Error("This quiz has already been completed.");
         }
 
-        transaction.set(quizAttemptRef, {
-          userId: user.uid,
-          quizId: "dailyQuiz1",
+        transaction.update(quizAttemptRef, {
           score: correctAnswers,
           pointsAwarded: calculatedPoints,
-          attemptedAt: serverTimestamp()
+          completedAt: serverTimestamp(),
+          status: 'COMPLETED'
         });
 
         if (calculatedPoints > 0) {
@@ -126,17 +175,11 @@ function Quiz() {
 
     } catch (error) {
       console.error("Error processing quiz results: ", error);
-      if (error.message === "You have already completed today's quiz.") {
-          setHasAttempted(true); 
-          setUpdateMessage("You have already completed today's quiz.");
-      } else {
-          setUpdateMessage(error.message || "Could not record your quiz attempt. Please try again.");
-          setSubmitted(false); 
-      }
+      setUpdateMessage(error.message || "Could not record your quiz attempt. Please try again.");
+      setHasAttempted(true); // Block re-attempt on error
     }
   };
 
-  // Styles
   const pageStyle = {
     fontFamily: `'Segoe UI', Tahoma, Geneva, Verdana, sans-serif`,
     backgroundColor: '#f4f7f6',
@@ -166,8 +209,8 @@ function Quiz() {
     fontSize: '0.9rem'
   };
 
-  if (loading) {
-    return <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh'}}>Checking your quiz status...</div>;
+  if (loading || quizLoading) {
+    return <div style={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh'}}>Loading Quiz...</div>;
   }
 
   if (hasAttempted) {
@@ -175,9 +218,21 @@ function Quiz() {
         <div style={pageStyle}>
           <button style={backButtonStyle} onClick={() => navigate('/dashboard')}>&larr; Back to Dashboard</button>
             <div style={quizContainerStyle}>
-                <h2 style={{textAlign: 'center', color: '#4a00e0'}}>Quiz Complete</h2>
-                <p style={{textAlign: 'center', fontSize: '1.2rem', marginTop: '1rem'}}>You have already completed today's quiz.</p>
+                <h2 style={{textAlign: 'center', color: '#4a00e0'}}>Quiz In Progress or Completed</h2>
+                <p style={{textAlign: 'center', fontSize: '1.2rem', marginTop: '1rem'}}>You have already started or completed this quiz.</p>
             </div>
+        </div>
+      );
+  }
+  
+  if (quizQuestions.length === 0 && !quizLoading) {
+      return (
+        <div style={pageStyle}>
+          <button style={backButtonStyle} onClick={() => navigate('/dashboard')}>&larr; Back to Dashboard</button>
+          <div style={quizContainerStyle}>
+            <h1 style={{ textAlign: 'center', color: '#4a00e0', marginBottom: '2rem' }}>Daily Quiz</h1>
+            <p style={{ textAlign: 'center', fontSize: '1.2rem' }}>No quiz questions are available for the current version.</p>
+          </div>
         </div>
       );
   }
@@ -190,16 +245,16 @@ function Quiz() {
         {submitted ? (
           <div>
             <h2 style={{textAlign: 'center'}}>Quiz Results</h2>
-            <p style={{textAlign: 'center', fontSize: '1.2rem'}}>You scored {score} out of {quizData.length}.</p>
+            <p style={{textAlign: 'center', fontSize: '1.2rem'}}>You scored {score} out of {quizQuestions.length}.</p>
             <p style={{textAlign: 'center', fontSize: '1.1rem', color: 'green'}}>{updateMessage}</p>
           </div>
         ) : (
           <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
-            {quizData.map((item, index) => (
-              <div key={index} style={{marginBottom: '1.5rem'}}>
+            {quizQuestions.map((item, index) => (
+              <div key={item.id} style={{marginBottom: '1.5rem'}}>
                 <p style={{fontWeight: 'bold'}}>{index + 1}. {item.question}</p>
                 <div>
-                  {item.options.map((option, optionIndex) => (
+                  {Object.values(item.options).map((option, optionIndex) => (
                     <div key={optionIndex} style={{margin: '0.5rem 0'}}>
                       <label style={{display: 'block', padding: '0.5rem', borderRadius: '8px', border: '1px solid #ccc', cursor: 'pointer'}}>
                         <input

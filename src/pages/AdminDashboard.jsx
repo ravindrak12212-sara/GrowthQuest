@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth, db } from '../firebase/firebase';
-import { collection, query, where, onSnapshot, doc, runTransaction, increment, serverTimestamp, setDoc, deleteDoc, orderBy, limit, addDoc, updateDoc, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, runTransaction, increment, serverTimestamp, setDoc, deleteDoc, orderBy, limit, addDoc, updateDoc, getDocs, getDoc } from 'firebase/firestore';
 import PollManagement from '../components/admin/PollManagement';
 import WritingManagement from '../components/admin/WritingManagement';
 import GiftManagement from '../components/admin/GiftManagement';
-import FeatureAccessManagement from './FeatureAccessManagement'; // Import the new component
+import FeatureAccessManagement from './FeatureAccessManagement';
+import QuizManagement from '../components/admin/QuizManagement';
 
 const REWARD_NAMES = {
     amazon_pay: '🟨 Amazon Pay Gift Card',
@@ -32,9 +33,11 @@ function AdminDashboard({ handleLogout }) {
   const [requestsLoading, setRequestsLoading] = useState(true);
   const [writingTasksLoading, setWritingTasksLoading] = useState(true);
   const [announcementLoading, setAnnouncementLoading] = useState(true);
+  const [quizQuestionsLoading, setQuizQuestionsLoading] = useState(true);
+  const [quizVersion, setQuizVersion] = useState(0);
 
   // TABS
-  const [activeTab, setActiveTab] = useState('polls'); // Keep original default
+  const [activeTab, setActiveTab] = useState('polls');
 
   // ANNOUNCEMENTS
   const [announcementTitle, setAnnouncementTitle] = useState('');
@@ -58,6 +61,11 @@ function AdminDashboard({ handleLogout }) {
   const [writingTasks, setWritingTasks] = useState([]);
   const [newWritingTask, setNewWritingTask] = useState({ title: '', question: '', rewardPoints: 50, minimumWords: 100 });
   const [writingResponses, setWritingResponses] = useState([]);
+
+  // QUIZ MANAGEMENT STATE
+  const [quizQuestions, setQuizQuestions] = useState([]);
+  const [newQuizQuestion, setNewQuizQuestion] = useState({ question: '', options: { A: '', B: '', C: '', D: '' }, correctAnswer: '', active: false, quizVersion: 1 });
+  const [editingQuizQuestion, setEditingQuizQuestion] = useState(null);
   
   const [treasureKeyUserEmail, setTreasureKeyUserEmail] = useState('');
   const [treasureKeyMessage, setTreasureKeyMessage] = useState('');
@@ -88,7 +96,6 @@ function AdminDashboard({ handleLogout }) {
   // --- FIRESTORE LISTENERS ---
   useEffect(() => {
     const unsubscribes = [];
-    // Master Listeners
     const usersQuery = query(collection(db, "users"));
     unsubscribes.push(onSnapshot(usersQuery, (snapshot) => { setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setUsersLoading(false); }, (err) => { console.error("User listener error:", err); setError("Failed to fetch user data."); setUsersLoading(false); }));
     const pollsQuery = query(collection(db, "polls"), orderBy("createdAt", "desc"));
@@ -125,10 +132,25 @@ function AdminDashboard({ handleLogout }) {
         }
     ));
 
+    const quizQuestionsQuery = query(collection(db, "quizQuestions"), orderBy("createdAt", "desc"));
+    unsubscribes.push(onSnapshot(quizQuestionsQuery, (snapshot) => { setQuizQuestions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); setQuizQuestionsLoading(false); }, (err) => { console.error("Quiz questions listener error:", err); setError("Failed to fetch quiz questions."); setQuizQuestionsLoading(false); }));
+
+    const quizSettingsRef = doc(db, 'quizSettings', 'current');
+    unsubscribes.push(onSnapshot(quizSettingsRef, (docSnap) => {
+        if (docSnap.exists()) {
+            const currentVersion = docSnap.data().currentVersion;
+            setQuizVersion(currentVersion);
+            setNewQuizQuestion(prevState => ({...prevState, quizVersion: currentVersion}));
+        } else {
+            setDoc(quizSettingsRef, { currentVersion: 1, updatedAt: serverTimestamp() });
+            setQuizVersion(1);
+            setNewQuizQuestion(prevState => ({...prevState, quizVersion: 1}));
+        }
+    }));
+
     return () => unsubscribes.forEach(unsub => unsub());
   }, []);
 
-  // Effect for fetching poll responses when a poll is selected
   useEffect(() => {
     if (selectedPoll) {
       setResponsesLoading(true);
@@ -142,20 +164,18 @@ function AdminDashboard({ handleLogout }) {
         setResponsesLoading(false);
       });
 
-      // Cleanup listener when component unmounts or selectedPoll changes
       return () => unsubscribe();
     } else {
-      setPollResponses([]); // Clear responses when no poll is selected
+      setPollResponses([]);
     }
   }, [selectedPoll]);
 
   useEffect(() => {
-    if (!usersLoading && !pollsLoading && !requestsLoading && !announcementLoading) {
+    if (!usersLoading && !pollsLoading && !requestsLoading && !announcementLoading && !quizQuestionsLoading) {
       setLoading(false);
     }
-  }, [usersLoading, pollsLoading, requestsLoading, announcementLoading]);
+  }, [usersLoading, pollsLoading, requestsLoading, announcementLoading, quizQuestionsLoading]);
 
-  // --- POLL MANAGEMENT LOGIC ---
     const toDateTime = (dateTimeString) => {
         if (!dateTimeString) return null;
         const dt = new Date(dateTimeString);
@@ -244,6 +264,7 @@ function AdminDashboard({ handleLogout }) {
 
     const handleCancelEdit = () => {
         setEditingPoll(null);
+        setEditingQuizQuestion(null);
         setError(null);
         setMessage('');
     };
@@ -294,7 +315,104 @@ function AdminDashboard({ handleLogout }) {
       } catch (err) { console.error("Error deleting poll:", err); setError("Failed to delete poll."); }
   };
 
-  // --- REDEEM APPROVAL WORKFLOW ---
+  const validateQuizQuestionData = (questionData) => {
+    const { question, options, correctAnswer } = questionData;
+    if (!question.trim()) return "Question cannot be empty.";
+    if (Object.values(options).some(opt => !opt.trim())) return "All options must be filled.";
+    if (!correctAnswer) return "Please select a correct answer.";
+    return null;
+  };
+
+  const handleCreateQuizQuestion = async () => {
+    setError(null);
+    setMessage('');
+    const validationError = validateQuizQuestionData(newQuizQuestion);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    try {
+      await addDoc(collection(db, 'quizQuestions'), {
+        ...newQuizQuestion,
+        createdAt: serverTimestamp(),
+      });
+      setNewQuizQuestion({ question: '', options: { A: '', B: '', C: '', D: '' }, correctAnswer: '', active: false, quizVersion: quizVersion });
+      setMessage('Quiz question created successfully!');
+    } catch (err) {
+      console.error("Error creating quiz question:", err);
+      setError("Failed to create quiz question.");
+    }
+  };
+
+  const handleUpdateQuizQuestion = async () => {
+    if (!editingQuizQuestion) return;
+    setError(null);
+    setMessage('');
+    const validationError = validateQuizQuestionData(editingQuizQuestion);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    try {
+      const questionRef = doc(db, 'quizQuestions', editingQuizQuestion.id);
+      await updateDoc(questionRef, editingQuizQuestion);
+      setEditingQuizQuestion(null);
+      setMessage('Quiz question updated successfully!');
+    } catch (err) {
+      console.error("Error updating quiz question:", err);
+      setError("Failed to update quiz question.");
+    }
+  };
+
+  const handleEditQuizClick = (question) => {
+    setEditingQuizQuestion(question);
+  };
+
+  const toggleQuizQuestionStatus = async (questionId, currentStatus) => {
+    setError(null); setMessage('');
+    try {
+      await updateDoc(doc(db, 'quizQuestions', questionId), { active: !currentStatus });
+      setMessage(`Question status updated successfully!`);
+    } catch (err) {
+      console.error("Error updating question status:", err);
+      setError("Failed to update question status.");
+    }
+  };
+
+  const deleteQuizQuestion = async (questionId) => {
+    setError(null); setMessage('');
+    try {
+      await deleteDoc(doc(db, 'quizQuestions', questionId));
+      setMessage('Question deleted successfully!');
+    } catch (err) {
+      console.error("Error deleting question:", err);
+      setError("Failed to delete question.");
+    }
+  };
+
+  const handlePublishQuiz = async () => {
+    setError(null);
+    setMessage('');
+    try {
+      const quizSettingsRef = doc(db, 'quizSettings', 'current');
+      await runTransaction(db, async (transaction) => {
+        const quizSettingsDoc = await transaction.get(quizSettingsRef);
+        if (!quizSettingsDoc.exists()) {
+          transaction.set(quizSettingsRef, { currentVersion: 1, updatedAt: serverTimestamp() });
+        } else {
+          transaction.update(quizSettingsRef, { 
+            currentVersion: increment(1),
+            updatedAt: serverTimestamp()
+          });
+        }
+      });
+      setMessage(`Successfully published new quiz version.`);
+    } catch (err) {
+      console.error("Error publishing quiz:", err);
+      setError("Failed to publish new quiz version.");
+    }
+  };
+
   const handleApprove = async (request) => {
     const { id: requestId } = request;
     setMessage(''); setError(null);
@@ -339,10 +457,9 @@ function AdminDashboard({ handleLogout }) {
         const userDoc = await transaction.get(userRef);
         if (!userDoc.exists()) { throw new Error(`User ${userId} not found. Cannot process rejection.`); }
         transaction.update(requestRef, { status: "rejected", rejectedAt: serverTimestamp(), rejectedBy: auth.currentUser.email });
-        // Return points to user
         if (status === 'pending') {
             transaction.update(userRef, { processingPoints: increment(-pointsUsed), pointsEarned: increment(pointsUsed) });
-        } else { // It was in processing
+        } else {
             transaction.update(userRef, { processingPoints: increment(-pointsUsed), pointsEarned: increment(pointsUsed) });
         }
       });
@@ -350,7 +467,6 @@ function AdminDashboard({ handleLogout }) {
     } catch (err) { console.error("Error rejecting request:", err); setError(`Failed to reject request: ${err.message}`); }
   };
 
-  // --- WRITING CHALLENGE LOGIC ---
   const handleCreateWritingTask = async () => {
     if (!newWritingTask.title || !newWritingTask.question) {
       setError("Challenge title and question are required.");
@@ -368,7 +484,7 @@ function AdminDashboard({ handleLogout }) {
     try {
       await addDoc(collection(db, 'writingTasks'), {
         ...newWritingTask,
-        active: false, // Default to inactive
+        active: false,
         archived: false,
         createdAt: serverTimestamp(),
       });
@@ -457,7 +573,6 @@ function AdminDashboard({ handleLogout }) {
         }
     };
 
-  // --- OTHER HANDLERS ---
   const handlePublishAnnouncement = async () => {
     if (!announcementTitle || !announcementMessage) { setError("Please fill in both the title and message for the announcement."); return; }
     setError(null); setMessage('');
@@ -523,7 +638,6 @@ function AdminDashboard({ handleLogout }) {
       setError(err.message || "Failed to approve submission.");
     }
   };
-  // --- STYLES (UNCHANGED) ---
   const pageStyle = { fontFamily: `'Segoe UI', Tahoma, Geneva, Verdana, sans-serif`, backgroundColor: '#f4f7f6', color: '#333', minHeight: '100vh' };
   const navStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 2rem', backgroundColor: 'white', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', position: 'sticky', top: 0, zIndex: 1000 };
   const navTitleStyle = { fontSize: '1.5rem', fontWeight: 'bold', color: '#4a00e0' };
@@ -551,11 +665,11 @@ function AdminDashboard({ handleLogout }) {
   const statusBadgeStyle = (status) => {
     const baseStyle = { padding: '0.4rem 0.8rem', borderRadius: '12px', color: 'white', fontWeight: 'bold', fontSize: '0.8rem', display: 'inline-block' };
     switch (status) {
-        case 'pending': return { ...baseStyle, backgroundColor: '#ffc107' }; // Yellow
-        case 'processing': return { ...baseStyle, backgroundColor: '#17a2b8' }; // Blue
-        case 'completed': return { ...baseStyle, backgroundColor: '#28a745' }; // Green
-        case 'rejected': return { ...baseStyle, backgroundColor: '#dc3545' }; // Red
-        default: return { ...baseStyle, backgroundColor: '#6c757d' }; // Grey
+        case 'pending': return { ...baseStyle, backgroundColor: '#ffc107' };
+        case 'processing': return { ...baseStyle, backgroundColor: '#17a2b8' };
+        case 'completed': return { ...baseStyle, backgroundColor: '#28a745' };
+        case 'rejected': return { ...baseStyle, backgroundColor: '#dc3545' };
+        default: return { ...baseStyle, backgroundColor: '#6c757d' };
     }
   };
 
@@ -637,6 +751,7 @@ function AdminDashboard({ handleLogout }) {
           <div style={tabContainerStyle}>
               <button style={activeTab === 'polls' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('polls')}>Poll Management</button>
               <button style={activeTab === 'writing' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('writing')}>Writing Management</button>
+              <button style={activeTab === 'quiz' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('quiz')}>Quiz Management</button>
               <button style={activeTab === 'announcements' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('announcements')}>Announcement Management</button>
               <button style={activeTab === 'giftManagement' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('giftManagement')}>🎁 Gift Management</button>
               <button style={activeTab === 'featureAccess' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('featureAccess')}>⚙️ Feature Access</button>
@@ -680,6 +795,32 @@ function AdminDashboard({ handleLogout }) {
                 tdStyle={tdStyle}
             />
           )}
+           {activeTab === 'quiz' && (
+                <QuizManagement
+                    questions={quizQuestions}
+                    loading={quizQuestionsLoading}
+                    error={error}
+                    newQuestion={newQuizQuestion}
+                    setNewQuestion={setNewQuizQuestion}
+                    editingQuestion={editingQuizQuestion}
+                    setEditingQuestion={setEditingQuizQuestion}
+                    handleCreateQuestion={handleCreateQuizQuestion}
+                    handleUpdateQuestion={handleUpdateQuizQuestion}
+                    handleCancelEdit={handleCancelEdit}
+                    handleEditClick={handleEditQuizClick}
+                    toggleQuestionStatus={toggleQuizQuestionStatus}
+                    deleteQuestion={deleteQuizQuestion}
+                    sectionTitleStyle={sectionTitleStyle}
+                    announcementFormStyle={announcementFormStyle}
+                    inputStyle={inputStyle}
+                    buttonStyle={buttonStyle}
+                    tableStyle={tableStyle}
+                    thStyle={thStyle}
+                    tdStyle={tdStyle}
+                    quizVersion={quizVersion}
+                    handlePublishQuiz={handlePublishQuiz}
+                />
+            )}
           {activeTab === 'writing' && (
             <WritingManagement
               tasks={writingTasks}
