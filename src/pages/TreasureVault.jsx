@@ -52,7 +52,12 @@ function TreasureVault({ user }) {
     const userDocRef = doc(db, 'users', user.uid);
     const unsubscribeUser = onSnapshot(userDocRef, (doc) => {
       if (doc.exists()) {
-        setUserData(doc.data());
+        const data = doc.data();
+        if (!data.treasureAccess) {
+            navigate('/dashboard');
+            return;
+        }
+        setUserData(data);
       }
       setLoading(false);
     });

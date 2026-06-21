@@ -47,8 +47,8 @@ function App() {
             <Route path="/dashboard" element={<ProtectedRoute user={user}><Dashboard handleLogout={handleLogout} /></ProtectedRoute>} />
             <Route path="/quiz" element={<ProtectedRoute user={user}><Quiz /></ProtectedRoute>} />
             <Route path="/redeem" element={<ProtectedRoute user={user}><Redeem /></ProtectedRoute>} />
-            <Route path="/treasure-vault" element={<ProtectedRoute user={user}><TreasureVault /></ProtectedRoute>} />
-            <Route path="/delivery-profile" element={<ProtectedRoute user={user}><DeliveryProfile /></ProtectedRoute>} />
+            <Route path="/treasure-vault" element={<ProtectedRoute user={user}><TreasureVault user={user}/></ProtectedRoute>} />
+            <Route path="/delivery-profile" element={<ProtectedRoute user={user}><DeliveryProfile user={user} /></ProtectedRoute>} />
             <Route path="/admin" element={<AdminProtectedRoute user={user}><AdminDashboard handleLogout={handleLogout} /></AdminProtectedRoute>} />
         </Routes>
     );

@@ -902,7 +902,7 @@ function Dashboard({ handleLogout }) {
             </div>
           </div>
         </section>
-
+        {userData?.treasureAccess && (
         <section style={{marginTop: '3rem', cursor: 'pointer'}} onClick={handleTreasureVaultNavigation}>
             <h2 style={{ fontSize: '2rem', fontWeight: 'bold', textAlign: 'center', marginBottom: '2rem', color: '#4a00e0'}}>Treasure Vault</h2>
             <div style={statsContainerStyle}>
@@ -933,6 +933,7 @@ function Dashboard({ handleLogout }) {
                 })}
             </div>
         </section>
+        )}
 
         <section style={{marginTop: '3rem'}}>
             <h2 style={{ fontSize: '2rem', fontWeight: 'bold', textAlign: 'center', marginBottom: '2rem', color: '#4a00e0'}}>Your Streak</h2>

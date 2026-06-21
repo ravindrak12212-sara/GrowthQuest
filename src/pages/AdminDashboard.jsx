@@ -5,6 +5,7 @@ import { collection, query, where, onSnapshot, doc, runTransaction, increment, s
 import PollManagement from '../components/admin/PollManagement';
 import WritingManagement from '../components/admin/WritingManagement';
 import GiftManagement from '../components/admin/GiftManagement';
+import FeatureAccessManagement from './FeatureAccessManagement'; // Import the new component
 
 const REWARD_NAMES = {
     amazon_pay: '🟨 Amazon Pay Gift Card',
@@ -33,7 +34,7 @@ function AdminDashboard({ handleLogout }) {
   const [announcementLoading, setAnnouncementLoading] = useState(true);
 
   // TABS
-  const [activeTab, setActiveTab] = useState('polls');
+  const [activeTab, setActiveTab] = useState('polls'); // Keep original default
 
   // ANNOUNCEMENTS
   const [announcementTitle, setAnnouncementTitle] = useState('');
@@ -634,11 +635,13 @@ function AdminDashboard({ handleLogout }) {
             </div>
           </section>
           <div style={tabContainerStyle}>
-              <button style={activeTab === 'announcements' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('announcements')}>Announcement Management</button>
               <button style={activeTab === 'polls' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('polls')}>Poll Management</button>
               <button style={activeTab === 'writing' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('writing')}>Writing Management</button>
+              <button style={activeTab === 'announcements' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('announcements')}>Announcement Management</button>
               <button style={activeTab === 'giftManagement' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('giftManagement')}>🎁 Gift Management</button>
+              <button style={activeTab === 'featureAccess' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('featureAccess')}>⚙️ Feature Access</button>
           </div>
+          {activeTab === 'featureAccess' && <FeatureAccessManagement />}
           {activeTab === 'announcements' && (
               <>
                   <section><h2 style={sectionTitleStyle}>Publish Announcement</h2><div style={announcementFormStyle}><input type="text" style={inputStyle} placeholder="Announcement Title" value={announcementTitle} onChange={(e) => setAnnouncementTitle(e.target.value)} /><textarea style={textareaStyle} placeholder="Announcement Message" value={announcementMessage} onChange={(e) => setAnnouncementMessage(e.target.value)} /><button style={{...buttonStyle, background: '#4a00e0', width: '100%'}} onClick={handlePublishAnnouncement}>Publish Announcement</button></div></section>
