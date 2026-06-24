@@ -5,6 +5,7 @@ import { doc, onSnapshot, updateDoc, runTransaction, serverTimestamp, collection
 import { sendPasswordResetEmail } from 'firebase/auth';
 import ActivePolls from '../components/user/ActivePolls';
 import ActiveWritingChallenges from '../components/user/ActiveWritingChallenges';
+import GQBuddyButton from '../components/user/GQBuddyButton';
 
 function Dashboard({ handleLogout }) {
   const [userData, setUserData] = useState(null);
@@ -1037,6 +1038,7 @@ function Dashboard({ handleLogout }) {
         </section>
 
       </main>
+      <GQBuddyButton user={user} />
     </div>
   );
 }

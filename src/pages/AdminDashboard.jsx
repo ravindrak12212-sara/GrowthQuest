@@ -7,6 +7,7 @@ import WritingManagement from '../components/admin/WritingManagement';
 import GiftManagement from '../components/admin/GiftManagement';
 import FeatureAccessManagement from './FeatureAccessManagement';
 import QuizManagement from '../components/admin/QuizManagement';
+import GQBuddyAdmin from '../components/admin/GQBuddyAdmin';
 
 const REWARD_NAMES = {
     amazon_pay: '🟨 Amazon Pay Gift Card',
@@ -718,7 +719,9 @@ function AdminDashboard({ handleLogout }) {
               <button style={activeTab === 'announcements' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('announcements')}>Announcement Management</button>
               <button style={activeTab === 'giftManagement' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('giftManagement')}>🎁 Gift Management</button>
               <button style={activeTab === 'featureAccess' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('featureAccess')}>⚙️ Feature Access</button>
+              <button style={activeTab === 'gqBuddy' ? tabButtonActiveStyle : tabButtonStyle} onClick={() => setActiveTab('gqBuddy')}>🤖 GQ Buddy Chat</button>
           </div>
+          {activeTab === 'gqBuddy' && <GQBuddyAdmin users={users} />}
           {activeTab === 'featureAccess' && <FeatureAccessManagement />}
           {activeTab === 'announcements' && (
               <>
